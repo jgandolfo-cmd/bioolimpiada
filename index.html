@@ -480,7 +480,7 @@ function rDlg(q,ac){
   <div style="display:flex;gap:3px;">${[1,2,3].map(i=>`<div style="width:20px;height:4px;border-radius:2px;background:${i<=ac.ronda?RC[Math.min(ac.ronda,3)]:"rgba(100,116,139,.2)"};transition:background .3s;"></div>`).join("")}</div>
 </div>
 <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:13px;">
-${ac.hist.map(m=>`<div style="display:flex;${m.r==="a"?"justify-content:flex-end":"align-items:flex-start;gap:7px;}">
+${ac.hist.map(m=>`<div style="display:flex;${m.r==="a"?"justify-content:flex-end":"align-items:flex-start;gap:7px;"}">
 ${m.r==="t"?`<div style="width:27px;height:27px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:2px;">🧬</div>`:""}
 <div style="max-width:86%;padding:10px 13px;border-radius:${m.r==="a"?"16px 16px 4px 16px":"16px 16px 16px 4px"};background:${m.r==="a"?"rgba(37,99,235,.16)":"#131f35"};border:1px solid ${m.r==="a"?"rgba(37,99,235,.28)":"rgba(148,163,184,.1)"};font-size:14px;line-height:1.65;color:${m.r==="a"?"#e2e8f0":"#cbd5e1"};" class="si">${m.t}</div>
 </div>`).join("")}
