@@ -109,6 +109,7 @@ const LVLS=[{n:"Célula",mx:200},{n:"Tejido",mx:450},{n:"Órgano",mx:800},{n:"Si
 // ── ESTADO ────────────────────────────────────────────────────
 let S={
   pan:"pin",pin:"",pinErr:false,
+  mapaUnit:null, busqTxt:"",busqRes:null,busqLoad:false,
   // Login alumno
   dni:"",nombre:"",clave:"",claveErr:false,loginStep:1,
   xp:0,racha:0,sesiones:0,
@@ -349,6 +350,8 @@ function page(){
   if(S.pan==="sel")return rSel()+(S.showCfg?rCfgModal():"");
   if(S.pan==="ses")return rSes();
   if(S.pan==="fin")return rFin();
+  if(S.pan==="mapa")return rMapa();
+  if(S.pan==="buscar")return rBuscar();
   return"";
 }
 
@@ -394,64 +397,88 @@ function rPin(){
 
 function rHome(){
   const l=lvl(),p=lvlPct(),n=S.sel.size;
-  return`<div>
+  return`<div style="min-height:100vh;display:flex;flex-direction:column;">
+<!-- HEADER -->
 <div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5;">
   <div style="display:flex;align-items:center;gap:9px;">
     <div style="width:30px;height:30px;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">🧬</div>
     <div>
       <div style="font-size:13px;font-weight:700;color:#f1f5f9;">BioOlimpiada OAB</div>
-      <div style="font-size:10px;color:#475569;">DNI: ${S.dni} · ${l.n}</div>
+      <div style="font-size:10px;color:#475569;">DNI ${S.dni} · Nivel ${l.n}</div>
     </div>
   </div>
-  <div style="display:flex;gap:9px;align-items:center;">
+  <div style="display:flex;gap:8px;align-items:center;">
     <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.18);border-radius:20px;padding:3px 9px;font-size:12px;color:#fbbf24;font-weight:700;">🔥 ${S.racha}d</div>
-    <div style="text-align:right;"><div style="font-size:17px;font-weight:800;color:#fbbf24;line-height:1;">${S.xp}</div><div style="font-size:9px;color:#475569;">XP</div></div>
-    <button id="bsalir-hdr" style="background:none;border:1px solid rgba(148,163,184,.2);border-radius:7px;color:#64748b;font-size:11px;padding:4px 8px;">Salir</button>
+    <div style="text-align:right;"><div style="font-size:16px;font-weight:800;color:#fbbf24;line-height:1;">${S.xp}</div><div style="font-size:9px;color:#475569;">XP</div></div>
+    <button id="bsalir-hdr" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:8px;color:#f87171;font-size:12px;font-weight:600;padding:5px 10px;">Salir ✕</button>
   </div>
 </div>
-${S.showSalir?`<div id="salir-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;">
-<div style="background:#0d1626;border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:24px;max-width:320px;width:100%;text-align:center;">
-  <div style="font-size:32px;margin-bottom:12px;">👋</div>
-  <div style="font-size:16px;font-weight:700;color:#f1f5f9;margin-bottom:8px;">¿Salir de la sesión?</div>
+${S.showSalir?`<div id="salir-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;">
+<div style="background:#0d1626;border:1px solid rgba(148,163,184,.15);border-radius:16px;padding:26px;max-width:320px;width:100%;text-align:center;" class="fu">
+  <div style="font-size:36px;margin-bottom:12px;">👋</div>
+  <div style="font-size:16px;font-weight:700;color:#f1f5f9;margin-bottom:8px;">¿Cerrar sesión?</div>
   <div style="font-size:13px;color:#64748b;margin-bottom:20px;">Tu progreso queda guardado en este dispositivo.</div>
   <div style="display:flex;gap:10px;">
     <button id="bsalir-no" style="flex:1;padding:12px;background:#131f35;border:1px solid rgba(148,163,184,.15);border-radius:10px;color:#94a3b8;font-size:14px;font-weight:600;">Cancelar</button>
-    <button id="bsalir-si" style="flex:1;padding:12px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:10px;color:#f87171;font-size:14px;font-weight:600;">Salir</button>
+    <button id="bsalir-si" style="flex:1;padding:12px;background:rgba(239,68,68,.15);border:1.5px solid rgba(239,68,68,.4);border-radius:10px;color:#f87171;font-size:14px;font-weight:700;">Salir</button>
   </div>
 </div></div>`:""}
-<div style="max-width:640px;margin:0 auto;padding:18px 16px 40px;">
+
+<!-- CONTENIDO -->
+<div style="max-width:640px;margin:0 auto;padding:18px 16px 100px;flex:1;">
+  <!-- Nivel y XP -->
   <div style="margin-bottom:20px;">
     <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;margin-bottom:5px;"><span>Nivel ${l.n}</span><span>${p}%</span></div>
-    <div style="height:4px;background:#131f35;border-radius:4px;overflow:hidden;"><div style="height:100%;width:${p}%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width 1s;"></div></div>
+    <div style="height:5px;background:#131f35;border-radius:4px;overflow:hidden;"><div style="height:100%;width:${p}%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width 1s;border-radius:4px;"></div></div>
   </div>
+  <!-- Stats -->
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:20px;">
-    ${[["📚","Temas sel.",n],["⚡","Sesiones",S.sesiones],["🎯","XP total",S.xp]].map(([ic,lb,v])=>`
+    ${[["📚","Temas",n],["⚡","Sesiones",S.sesiones],["🎯","XP",S.xp]].map(([ic,lb,v])=>`
     <div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:11px;padding:12px;text-align:center;">
-      <div style="font-size:17px;margin-bottom:3px;">${ic}</div>
-      <div style="font-size:19px;font-weight:800;color:#f1f5f9;">${v}</div>
+      <div style="font-size:16px;margin-bottom:3px;">${ic}</div>
+      <div style="font-size:18px;font-weight:800;color:#f1f5f9;">${v}</div>
       <div style="font-size:10px;color:#475569;margin-top:1px;">${lb}</div>
     </div>`).join("")}
   </div>
   ${n===0?`<div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);border-radius:12px;padding:16px;margin-bottom:14px;text-align:center;">
-    <div style="font-size:24px;margin-bottom:6px;">📖</div>
-    <div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:5px;">Elegí tus temas para empezar</div>
-    <div style="font-size:12px;color:#92400e;line-height:1.6;">Seleccioná capítulos de Curtis y el sistema genera preguntas específicas para esos temas.</div>
+    <div style="font-size:22px;margin-bottom:5px;">📖</div>
+    <div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px;">Elegí tus temas para empezar</div>
+    <div style="font-size:12px;color:#92400e;line-height:1.6;">Seleccioná capítulos de Curtis y el sistema genera preguntas específicas.</div>
   </div>`:""}
-  <button id="bsel" style="width:100%;padding:14px;background:${n>0?"#131f35":"linear-gradient(135deg,#2563eb,#7c3aed)"};border:${n>0?"1px solid rgba(148,163,184,.15)":"none"};border-radius:11px;color:${n>0?"#94a3b8":"#fff"};font-size:14px;font-weight:700;margin-bottom:9px;">
-    ${n===0?"📖  Elegir contenidos de Curtis →":"✏️  Cambiar temas ("+n+" seleccionados)"}
+  <!-- Botones principales -->
+  <button id="bsel" style="width:100%;padding:13px;background:${n>0?"#131f35":"linear-gradient(135deg,#2563eb,#7c3aed)"};border:${n>0?"1px solid rgba(148,163,184,.15)":"none"};border-radius:11px;color:${n>0?"#94a3b8":"#fff"};font-size:14px;font-weight:700;margin-bottom:9px;">
+    ${n===0?"📖  Elegir contenidos →":"✏️  Cambiar temas ("+n+" sel.)"}
   </button>
   ${n>0?`<button id="bstart" style="width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#15803d);border:none;border-radius:11px;color:#fff;font-size:15px;font-weight:700;margin-bottom:18px;">▶  Empezar sesión</button>`:""}
   ${n>0?`<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:11px;padding:13px;">
     <div style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px;font-weight:700;">Temas activos</div>
-    ${[...S.sel].slice(0,6).map(id=>{const t=tById(id);return t?`
+    ${[...S.sel].slice(0,5).map(id=>{const t=tById(id);return t?`
     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(148,163,184,.05);">
       <div style="width:7px;height:7px;border-radius:50%;background:${t.ucol};flex-shrink:0;"></div>
       <div style="font-size:12px;color:#94a3b8;flex:1;">${t.nom}</div>
       <div style="font-size:10px;color:#334155;">cap.${t.cap}</div>
     </div>`:""}).join("")}
-    ${S.sel.size>6?`<div style="font-size:11px;color:#334155;margin-top:7px;text-align:center;">...y ${S.sel.size-6} más</div>`:""}
+    ${S.sel.size>5?`<div style="font-size:11px;color:#334155;margin-top:7px;text-align:center;">...y ${S.sel.size-5} más</div>`:""}
   </div>`:""}
-</div></div>`;}
+</div>
+
+<!-- NAV INFERIOR -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+    <button id="bnav-home" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;">
+      <span style="font-size:18px;">🏠</span>Inicio
+    </button>
+    <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
+      <span style="font-size:18px;">🗺️</span>Mapa
+    </button>
+    <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
+      <span style="font-size:18px;">🔍</span>Buscar
+    </button>
+  </div>
+</div>
+</div>`;
+}
+
 
 function rSel(){
   const tot=UNITS.reduce((s,u)=>s+u.temas.length,0);
@@ -649,6 +676,150 @@ function rRevF(q){return`<div class="fu" style="padding:4px 0;">
 <button id="bnxt" style="width:100%;padding:12px;background:#131f35;border:1px solid rgba(148,163,184,.15);border-radius:10px;color:#94a3b8;font-size:14px;font-weight:600;">Continuar →</button>
 </div>`;}
 
+// ── MAPA DE CONTENIDOS ───────────────────────────────────────
+function rMapa(){
+  const u=S.mapaUnit?UNITS.find(x=>x.id===S.mapaUnit):null;
+  if(u) return rMapaDetalle(u);
+  return rMapaGeneral();
+}
+
+function rMapaGeneral(){
+  return`<div>
+<div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
+  <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
+  <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">Mapa de contenidos</div><div style="font-size:11px;color:#475569;">Curtis Biología 7ma ed.</div></div>
+</div>
+<div style="max-width:640px;margin:0 auto;padding:16px 16px 100px;">
+  <div style="font-size:13px;color:#64748b;margin-bottom:14px;">Tocá una unidad para ver el detalle y tu progreso por tema.</div>
+  ${UNITS.map(u=>{
+    const nSel=u.temas.filter(t=>S.sel.has(t.id)).length;
+    const pct=Math.round(nSel/u.temas.length*100);
+    return`<div data-munit="${u.id}" style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:13px;padding:15px;margin-bottom:10px;cursor:pointer;transition:border-color .15s;" class="fu"
+      onmouseover="this.style.borderColor='${u.col}44'" onmouseout="this.style.borderColor='rgba(148,163,184,.08)'">
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:10px;">
+        <div style="width:38px;height:38px;background:${u.col}16;border:1px solid ${u.col}28;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${u.ico}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:700;color:#f1f5f9;">${u.nom}</div>
+          <div style="font-size:11px;color:#475569;">${u.temas.length} temas · ${nSel} en entrenamiento</div>
+        </div>
+        <div style="font-size:12px;color:${u.col};font-weight:700;">${pct}%</div>
+      </div>
+      <div style="height:4px;background:#131f35;border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${u.col};border-radius:3px;transition:width .6s;"></div>
+      </div>
+    </div>`;
+  }).join("")}
+</div>
+<!-- NAV INFERIOR -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+    <button id="bnav-home" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🔍</span>Buscar</button>
+  </div>
+</div>
+</div>`;}
+
+function rMapaDetalle(u){
+  return`<div>
+<div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
+  <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
+  <div style="width:28px;height:28px;background:${u.col}18;border:1px solid ${u.col}30;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">${u.ico}</div>
+  <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">${u.nom}</div><div style="font-size:11px;color:#475569;">${u.temas.length} temas</div></div>
+</div>
+<div style="max-width:640px;margin:0 auto;padding:16px 16px 80px;">
+  ${u.temas.map(t=>{
+    const activo=S.sel.has(t.id);
+    return`<div style="background:#0d1626;border:1.5px solid ${activo?u.col+"44":"rgba(148,163,184,.08)"};border-radius:12px;padding:14px;margin-bottom:9px;display:flex;align-items:center;gap:12px;" class="fu">
+      <div style="width:32px;height:32px;border-radius:8px;background:${activo?u.col+"18":"rgba(148,163,184,.06)"};border:1px solid ${activo?u.col+"33":"rgba(148,163,184,.1)"};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">${activo?"✓":"○"}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:${activo?700:400};color:${activo?"#f1f5f9":"#94a3b8"};line-height:1.4;">${t.nom}</div>
+        <div style="font-size:11px;color:#334155;margin-top:3px;">Curtis cap. ${t.cap}</div>
+      </div>
+      <button data-toggle="${t.id}" style="padding:6px 12px;background:${activo?u.col+"18":"rgba(148,163,184,.06)"};border:1px solid ${activo?u.col+"44":"rgba(148,163,184,.15)"};border-radius:8px;color:${activo?u.col:"#64748b"};font-size:12px;font-weight:600;">
+        ${activo?"Activo":"+ Agregar"}
+      </button>
+    </div>`;
+  }).join("")}
+</div>
+</div>`;}
+
+// ── BUSCADOR DE TÉRMINOS ──────────────────────────────────────
+function rBuscar(){
+  return`<div>
+<div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
+  <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
+  <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">Buscador de conceptos</div><div style="font-size:11px;color:#475569;">Curtis Biología 7ma ed.</div></div>
+</div>
+<div style="max-width:640px;margin:0 auto;padding:16px 16px 100px;">
+  <!-- Input de búsqueda -->
+  <div style="display:flex;gap:9px;margin-bottom:18px;">
+    <input id="ibusq" type="text" placeholder="Ej: mitosis, glucólisis, alelo..." value="${S.busqTxt}"
+      style="flex:1;padding:13px 15px;background:#0d1626;border:1.5px solid rgba(148,163,184,.15);border-radius:11px;color:#f1f5f9;font-size:15px;outline:none;"
+      onfocus="this.style.borderColor='rgba(99,179,237,.4)'" onblur="this.style.borderColor='rgba(148,163,184,.15)'">
+    <button id="bbuscar" style="padding:13px 18px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:11px;color:#fff;font-size:14px;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:6px;">
+      ${S.busqLoad?`<span style="width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block;"></span>`:"🔍"} Buscar
+    </button>
+  </div>
+  <!-- Sugerencias rápidas -->
+  ${!S.busqRes&&!S.busqLoad?`<div style="margin-bottom:18px;">
+    <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px;">Búsquedas frecuentes</div>
+    <div style="display:flex;flex-wrap:wrap;gap:7px;">
+      ${["mitosis","fotosíntesis","ADN","proteína","membrana","meiosis","glucólisis","gen","selección natural","ecosistema"].map(t=>`
+      <button data-sug="${t}" style="padding:6px 13px;background:#0d1626;border:1px solid rgba(148,163,184,.12);border-radius:20px;color:#94a3b8;font-size:13px;">${t}</button>`).join("")}
+    </div>
+  </div>`:""}
+  <!-- Resultado -->
+  ${S.busqLoad?`<div style="text-align:center;padding:32px 0;">
+    <div style="width:36px;height:36px;border:3px solid rgba(99,179,237,.2);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div>
+    <div style="font-size:14px;color:#94a3b8;">Buscando en Curtis...</div>
+  </div>`:""}
+  ${S.busqRes&&!S.busqLoad?`<div class="fu">
+    <div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:13px;overflow:hidden;">
+      <!-- Término buscado -->
+      <div style="padding:14px 16px;border-bottom:1px solid rgba(148,163,184,.07);display:flex;align-items:center;gap:9px;">
+        <div style="font-size:20px;">${S.busqRes.icono||"📖"}</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#f1f5f9;">${S.busqTxt}</div>
+          <div style="font-size:11px;color:#475569;">Curtis Biología 7ma ed.</div>
+        </div>
+        ${S.busqRes.capitulo?`<div style="margin-left:auto;background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.2);border-radius:8px;padding:4px 10px;font-size:12px;color:#60a5fa;font-weight:700;">Cap. ${S.busqRes.capitulo}</div>`:""}
+      </div>
+      <!-- Ubicación en Curtis -->
+      ${S.busqRes.paginas?`<div style="padding:12px 16px;border-bottom:1px solid rgba(148,163,184,.07);display:flex;align-items:center;gap:8px;">
+        <span style="font-size:12px;color:#475569;">📄 Páginas:</span>
+        <span style="font-size:13px;color:#e2e8f0;font-weight:600;">${S.busqRes.paginas}</span>
+      </div>`:""}
+      <!-- Resumen del concepto -->
+      <div style="padding:14px 16px;">
+        <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumen del concepto</div>
+        <p style="font-size:14px;color:#cbd5e1;line-height:1.75;margin:0;">${S.busqRes.resumen}</p>
+      </div>
+      <!-- Conceptos relacionados -->
+      ${S.busqRes.relacionados?.length?`<div style="padding:12px 16px;border-top:1px solid rgba(148,163,184,.07);">
+        <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Conceptos relacionados</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${S.busqRes.relacionados.map(r=>`<span style="padding:4px 11px;background:rgba(148,163,184,.07);border:1px solid rgba(148,163,184,.12);border-radius:20px;font-size:12px;color:#94a3b8;">${r}</span>`).join("")}
+        </div>
+      </div>`:""}
+    </div>
+    <!-- Botón practicar el tema -->
+    ${S.busqRes.tema_id?`<button id="bpracticar" data-tid="${S.busqRes.tema_id}" style="width:100%;padding:13px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:11px;color:#fff;font-size:14px;font-weight:700;margin-top:12px;">
+      ▶ Practicar este tema
+    </button>`:""}
+  </div>`:""}
+</div>
+
+<!-- NAV INFERIOR -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+    <button id="bnav-home" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🔍</span>Buscar</button>
+  </div>
+</div>
+</div>`;}
+
 function rFin(){
   const r=S.ses.res,ok=r.filter(x=>x.ok).length,pct=r.length?Math.round(ok/r.length*100):0;
   const xp=r.reduce((s,x)=>s+(x.xp||0),0),c=pct>=80?"#22c55e":pct>=50?"#fbbf24":"#ef4444";
@@ -710,7 +881,11 @@ function ev(){
   });
   document.getElementById("bsel")?.addEventListener("click",()=>{S.pan="sel";render();});
   document.getElementById("bstart")?.addEventListener("click",()=>{S.showCfg=true;S.pan="sel";render();});
-  document.getElementById("bbk")?.addEventListener("click",()=>{S.pan="home";render();});
+  document.getElementById("bbk")?.addEventListener("click",()=>{
+    if(S.pan==="mapa"&&S.mapaUnit){S.mapaUnit=null;render();}
+    else if(S.pan==="mapa"||S.pan==="buscar"){S.pan="home";render();}
+    else{S.pan="home";render();}
+  });
   document.getElementById("bclr")?.addEventListener("click",()=>{S.sel.clear();saveLocal();render();});
   document.querySelectorAll("[data-uid]").forEach(el=>el.addEventListener("click",()=>{const id=el.dataset.uid;S.exp.has(id)?S.exp.delete(id):S.exp.add(id);render();}));
   document.querySelectorAll("[data-sa]").forEach(el=>el.addEventListener("click",e=>{e.stopPropagation();const u=UNITS.find(u=>u.id===el.dataset.sa);if(!u)return;const all=u.temas.every(t=>S.sel.has(t.id));if(all)u.temas.forEach(t=>S.sel.delete(t.id));else u.temas.forEach(t=>S.sel.add(t.id));saveLocal();render();}));
@@ -746,6 +921,33 @@ function ev(){
   });
   document.getElementById("bvosel")?.addEventListener("click",()=>{S.pan="sel";render();});
   document.getElementById("bnueva")?.addEventListener("click",iniciar);
+  // Nav inferior (aparece en home, mapa y buscar)
+  document.getElementById("bnav-home")?.addEventListener("click",()=>{S.pan="home";render();});
+  document.getElementById("bnav-mapa")?.addEventListener("click",()=>{S.mapaUnit=null;S.pan="mapa";render();});
+  document.getElementById("bnav-buscar")?.addEventListener("click",()=>{S.pan="buscar";render();setTimeout(()=>document.getElementById("ibusq")?.focus(),80);});
+  // Mapa general — clic en unidad
+  document.querySelectorAll("[data-munit]").forEach(el=>el.addEventListener("click",()=>{S.mapaUnit=el.dataset.munit;render();}));
+  // Mapa detalle — toggle tema
+  document.querySelectorAll("[data-toggle]").forEach(el=>el.addEventListener("click",e=>{
+    e.stopPropagation();const id=el.dataset.toggle;
+    S.sel.has(id)?S.sel.delete(id):S.sel.add(id);saveLocal();render();
+  }));
+  // Buscador
+  const ibusq=document.getElementById("ibusq");
+  if(ibusq){
+    ibusq.addEventListener("input",e=>{S.busqTxt=e.target.value;});
+    ibusq.addEventListener("keydown",e=>{if(e.key==="Enter")buscar();});
+    ibusq.focus();
+  }
+  document.getElementById("bbuscar")?.addEventListener("click",buscar);
+  document.querySelectorAll("[data-sug]").forEach(el=>el.addEventListener("click",()=>{
+    S.busqTxt=el.dataset.sug;buscar();
+  }));
+  // Practicar tema desde buscador
+  document.getElementById("bpracticar")?.addEventListener("click",e=>{
+    const tid=e.currentTarget.dataset.tid;
+    if(tid){S.sel.add(tid);saveLocal();S.pan="home";render();}
+  });
 }
 
 // ── LÓGICA ────────────────────────────────────────────────────
@@ -850,6 +1052,57 @@ async function siguiente(){
   if(!S.ses.pregs[ni]){const p=S.ses.plan[ni];S.ses.pregs[ni]=await genQ(p.tema,p.tipo);}
   S.ses.act.fase="res";render();
   if(ni+1<S.ses.plan.length&&!S.ses.pregs[ni+1])genQ(S.ses.plan[ni+1].tema,S.ses.plan[ni+1].tipo).then(q=>{S.ses.pregs[ni+1]=q;});
+}
+
+// ── BUSCADOR ─────────────────────────────────────────────────
+async function buscar(){
+  if(!S.busqTxt.trim())return;
+  S.busqLoad=true;S.busqRes=null;render();
+
+  // Encontrar tema relacionado en UNITS
+  const termLower=S.busqTxt.toLowerCase();
+  let temaMatch=null;
+  for(const u of UNITS){
+    for(const t of u.temas){
+      if(t.nom.toLowerCase().includes(termLower)||termLower.includes(t.nom.toLowerCase().split(":")[0].trim().toLowerCase())){
+        temaMatch={...t,ucol:u.col,unom:u.nom};break;
+      }
+    }
+    if(temaMatch)break;
+  }
+
+  const prompt=`Sos un experto en el libro "Curtis: Biología" 7ma edición en español.
+El alumno busca el concepto: "${S.busqTxt}"
+
+Respondé con un JSON con esta estructura exacta (sin markdown, sin backticks):
+{
+  "icono": "emoji representativo del concepto",
+  "capitulo": "número o rango de capítulo donde aparece principalmente",
+  "paginas": "rango de páginas aproximado (ej: 145-152)",
+  "resumen": "explicación clara del concepto en 3-4 oraciones, nivel secundaria",
+  "relacionados": ["concepto1", "concepto2", "concepto3"],
+  "tema_id": "${temaMatch?temaMatch.id:""}"
+}
+
+Si el concepto no está en Curtis 7ma ed., igualmente dá la mejor información que tengas sobre el tema a nivel biología secundaria, indicando en "capitulo" el capítulo más cercano.`;
+
+  try{
+    const txt=await ai(prompt);
+    const res=parseJ(txt);
+    // Si la IA no devolvió tema_id pero hay match local, usarlo
+    if(!res.tema_id&&temaMatch)res.tema_id=temaMatch.id;
+    S.busqRes=res;
+  }catch(e){
+    S.busqRes={
+      icono:"📖",
+      capitulo:"—",
+      paginas:"—",
+      resumen:`No se pudo obtener información sobre "${S.busqTxt}". Verificá tu conexión e intentá de nuevo.`,
+      relacionados:[],
+      tema_id:temaMatch?.id||""
+    };
+  }
+  S.busqLoad=false;render();
 }
 
 // ── INIT ──────────────────────────────────────────────────────
