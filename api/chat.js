@@ -1,6 +1,5 @@
 // api/chat.js — Vercel Serverless Function
-// Usa Google Gemini 2.0 Flash — FREE TIER: 1,500 req/día, sin tarjeta de crédito.
-// La API key NUNCA llega al navegador. Solo vive en las variables de entorno de Vercel.
+// Usa Google Gemini Flash — FREE TIER: 1,500 req/día, sin tarjeta de crédito.
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -19,8 +18,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Faltan mensajes" });
     }
 
-    // Convertir formato Anthropic → formato Gemini
-    // El frontend manda [{role:"user", content:"..."}]
     const geminiContents = messages.map(m => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: typeof m.content === "string" ? m.content : m.content[0]?.text || "" }]
@@ -34,33 +31,66 @@ export default async function handler(req, res) {
       }
     };
 
-    // Gemini 2.0 Flash — free tier en Google AI Studio
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    // Intentar con gemini-2.0-flash primero, luego gemini-1.5-flash como fallback
+    const modelos = [
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest"
+    ];
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody),
-    });
+    let lastError = null;
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error("Gemini error:", err);
-      return res.status(response.status).json({ error: err });
+    for (const modelo of modelos) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody),
+      });
+
+      // 429 = rate limit — no tiene sentido probar otro modelo, mismo límite
+      if (response.status === 429) {
+        const err = await response.text();
+        console.warn("Rate limit 429:", err.slice(0, 200));
+        return res.status(429).json({ error: "Rate limit — intentá en unos segundos" });
+      }
+
+      // 404 = modelo no disponible — probar el siguiente
+      if (response.status === 404) {
+        console.warn(`Modelo ${modelo} no disponible, probando siguiente...`);
+        lastError = `Modelo ${modelo} no disponible`;
+        continue;
+      }
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error(`Gemini error con ${modelo}:`, response.status, err.slice(0, 300));
+        lastError = `Error ${response.status}: ${err.slice(0, 150)}`;
+        continue;
+      }
+
+      const geminiData = await response.json();
+      const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      if (!text) {
+        console.warn("Gemini devolvió respuesta vacía:", JSON.stringify(geminiData).slice(0, 200));
+        lastError = "Respuesta vacía de Gemini";
+        continue;
+      }
+
+      // Éxito — devolver en formato compatible con el frontend
+      return res.status(200).json({
+        content: [{ type: "text", text }]
+      });
     }
 
-    const geminiData = await response.json();
-
-    // Extraer el texto de la respuesta de Gemini
-    const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    // Devolver en el mismo formato que usaba Anthropic para no tocar el frontend
-    return res.status(200).json({
-      content: [{ type: "text", text }]
-    });
+    // Todos los modelos fallaron
+    console.error("Todos los modelos fallaron. Último error:", lastError);
+    return res.status(500).json({ error: lastError || "No se pudo obtener respuesta de Gemini" });
 
   } catch (error) {
     console.error("Error en proxy Gemini:", error);
-    return res.status(500).json({ error: "Error interno del servidor" });
+    return res.status(500).json({ error: "Error interno: " + error.message });
   }
 }

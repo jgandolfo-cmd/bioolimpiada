@@ -1411,11 +1411,12 @@ Si el concepto no está en Curtis 7ma ed., igualmente dá la mejor información 
     // Intentar dar una respuesta básica desde el conocimiento del sistema
     // basada en el match local si existe
     if(temaMatch){
+      // Tenemos match local — dar info básica aunque falle la IA
       S.busqRes={
         icono:"📖",
         capitulo:temaMatch.cap||"—",
-        paginas:"Ver Curtis cap. "+temaMatch.cap,
-        resumen:`${temaMatch.nom} es un tema de ${temaMatch.unom} tratado en Curtis cap. ${temaMatch.cap}. La IA no pudo generar un resumen en este momento. Revisá tu conexión o intentá de nuevo.`,
+        paginas:"Curtis cap. "+temaMatch.cap,
+        resumen:`${temaMatch.nom} corresponde a la unidad "${temaMatch.unom}" de Curtis Biología 7ma ed., capítulo ${temaMatch.cap}. (La descripción detallada no está disponible en este momento — la IA no respondió. Podés practicar este tema igual con el botón de abajo.)`,
         relacionados:[],
         tema_id:temaMatch.id
       };
@@ -1424,7 +1425,7 @@ Si el concepto no está en Curtis 7ma ed., igualmente dá la mejor información 
         icono:"⚠️",
         capitulo:"—",
         paginas:"—",
-        resumen:`Error al conectar con el servidor (${e.message||"sin conexión"}). Revisá tu conexión a internet e intentá de nuevo.`,
+        resumen:`La IA no pudo responder ahora mismo. Esto puede pasar cuando hay muchas consultas seguidas. Esperá unos segundos e intentá de nuevo.`,
         relacionados:[],
         tema_id:""
       };
