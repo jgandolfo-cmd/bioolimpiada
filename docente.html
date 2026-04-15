@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BioOlimpiada — Panel Docente</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:#070c16;color:#e2e8f0;-webkit-font-smoothing:antialiased;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fu{animation:fadeUp .3s ease both}
+button{font-family:inherit;cursor:pointer;transition:opacity .15s;}
+button:hover{opacity:.85}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:rgba(148,163,184,.2);border-radius:2px}
+th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;padding:8px 12px;text-align:left;border-bottom:1px solid rgba(148,163,184,.08);}
+td{font-size:13px;padding:10px 12px;border-bottom:1px solid rgba(148,163,184,.05);color:#cbd5e1;vertical-align:middle;}
+tr:hover td{background:rgba(148,163,184,.03);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const PIN_DOCENTE = "DOCENTE2025"; // PIN separado para docentes
+let D = {
+  auth: false, pin: "", pinErr: false,
+  datos: null, cargando: false, error: "",
+  vista: "resumen", // resumen | alumnos | temas | sesiones
+  filtro: ""
+};
+
+function render(){
+  document.getElementById("root").innerHTML = D.auth ? rPanel() : rLogin();
+  ev();
+}
+
+function rLogin(){
+  return`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;">
+<div style="width:100%;max-width:360px;" class="fu">
+  <div style="text-align:center;margin-bottom:28px;">
+    <div style="width:52px;height:52px;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;">👩‍🏫</div>
+    <h1 style="font-size:22px;font-weight:800;margin-bottom:5px;">Panel Docente</h1>
+    <p style="font-size:13px;color:#64748b;">BioOlimpiada OAB</p>
+  </div>
+  <div style="background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:14px;padding:22px;">
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;font-weight:600;">PIN docente</div>
+    <input id="ipin" type="password" placeholder="••••••••••" value="${D.pin}"
+      style="width:100%;padding:12px 15px;background:#131f35;border:1.5px solid ${D.pinErr?"#ef4444":"rgba(148,163,184,.15)"};border-radius:10px;color:#f1f5f9;font-size:16px;outline:none;margin-bottom:${D.pinErr?"7px":"13px"};">
+    ${D.pinErr?`<div style="font-size:12px;color:#ef4444;margin-bottom:12px;">PIN incorrecto.</div>`:""}
+    <button id="bentrar" style="width:100%;padding:13px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;">Entrar →</button>
+  </div>
+</div></div>`;
+}
+
+function rPanel(){
+  return`<div>
+<!-- Header -->
+<div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:13px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div style="width:32px;height:32px;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;">👩‍🏫</div>
+    <div><div style="font-size:13px;font-weight:700;">Panel Docente — BioOlimpiada OAB</div><div style="font-size:10px;color:#475569;">Datos en tiempo real desde Google Sheets</div></div>
+  </div>
+  <button id="brecargar" style="padding:6px 13px;background:#131f35;border:1px solid rgba(148,163,184,.15);border-radius:8px;color:#94a3b8;font-size:12px;">🔄 Actualizar</button>
+</div>
+
+<!-- Tabs -->
+<div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:0 20px;display:flex;gap:0;">
+  ${[["resumen","📊 Resumen"],["alumnos","👥 Alumnos"],["temas","📘 Temas"],["sesiones","📋 Sesiones"]].map(([v,l])=>`
+  <button data-vista="${v}" style="padding:11px 16px;background:none;border:none;border-bottom:2px solid ${D.vista===v?"#3b82f6":"transparent"};color:${D.vista===v?"#60a5fa":"#64748b"};font-size:13px;font-weight:${D.vista===v?700:500};">${l}</button>`).join("")}
+</div>
+
+<div style="max-width:900px;margin:0 auto;padding:20px 16px 40px;">
+${D.cargando?`<div style="text-align:center;padding:40px;"><div style="width:36px;height:36px;border:3px solid rgba(99,179,237,.2);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div><div style="color:#64748b;">Cargando datos...</div></div>`:""}
+${D.error?`<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:11px;padding:16px;color:#f87171;">${D.error}</div>`:""}
+${!D.cargando&&!D.error&&D.datos?rVista():""}
+${!D.cargando&&!D.error&&!D.datos?`<div style="text-align:center;padding:40px;"><div style="font-size:32px;margin-bottom:12px;">📊</div><div style="color:#64748b;">Hacé clic en "Actualizar" para cargar los datos</div></div>`:""}
+</div></div>`;
+}
+
+function rVista(){
+  if(D.vista==="resumen") return rResumen();
+  if(D.vista==="alumnos") return rAlumnos();
+  if(D.vista==="temas") return rTemas();
+  return rSesiones();
+}
+
+function rResumen(){
+  const d=D.datos;
+  const alumnos=new Set(d.sesiones.map(s=>s.dni)).size;
+  const total=d.sesiones.length;
+  const correctas=d.sesiones.filter(s=>s.correcta==="Correcta").length;
+  const pctGlobal=total?Math.round(correctas/total*100):0;
+  const hoy=new Date().toISOString().split("T")[0];
+  const hoyCount=d.sesiones.filter(s=>s.fecha===hoy).length;
+
+  // Temas con más errores
+  const erroresPorTema={};
+  d.sesiones.filter(s=>s.correcta!=="Correcta").forEach(s=>{
+    erroresPorTema[s.tema]=(erroresPorTema[s.tema]||0)+1;
+  });
+  const topErrores=Object.entries(erroresPorTema).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  return`<div class="fu">
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px;">
+  ${[["👥","Alumnos activos",alumnos],["📝","Preguntas respondidas",total],["✅","Tasa de acierto",pctGlobal+"%"],["📅","Actividad hoy",hoyCount+" resp."]].map(([ic,l,v])=>`
+  <div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:12px;padding:16px;">
+    <div style="font-size:20px;margin-bottom:6px;">${ic}</div>
+    <div style="font-size:24px;font-weight:800;color:#f1f5f9;">${v}</div>
+    <div style="font-size:11px;color:#475569;margin-top:3px;">${l}</div>
+  </div>`).join("")}
+</div>
+
+${topErrores.length?`<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:12px;padding:16px;margin-bottom:18px;">
+  <div style="font-size:12px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">⚠ Temas con más dificultad (grupo)</div>
+  ${topErrores.map(([tema,n],i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(148,163,184,.05);">
+    <div style="font-size:12px;color:#475569;width:16px;">${i+1}</div>
+    <div style="flex:1;font-size:13px;color:#e2e8f0;">${tema}</div>
+    <div style="font-size:12px;color:#f87171;font-weight:700;">${n} errores</div>
+  </div>`).join("")}
+</div>`:""}
+</div>`;
+}
+
+function rAlumnos(){
+  const d=D.datos;
+  const porAlumno={};
+  d.sesiones.forEach(s=>{
+    if(!porAlumno[s.dni])porAlumno[s.dni]={dni:s.dni,total:0,ok:0,xp:s.xp||0,ultima:s.fecha};
+    porAlumno[s.dni].total++;
+    if(s.correcta==="Correcta")porAlumno[s.dni].ok++;
+    if(s.fecha>porAlumno[s.dni].ultima)porAlumno[s.dni].ultima=s.fecha;
+    const xpN=parseInt(s.xp)||0;if(xpN>porAlumno[s.dni].xp)porAlumno[s.dni].xp=xpN;
+  });
+  const lista=Object.values(porAlumno).sort((a,b)=>b.ok-a.ok);
+  return`<div class="fu">
+<input id="ifiltro" placeholder="Filtrar por DNI..." value="${D.filtro}"
+  style="width:100%;padding:11px 14px;background:#0d1626;border:1px solid rgba(148,163,184,.12);border-radius:10px;color:#f1f5f9;font-size:14px;outline:none;margin-bottom:14px;">
+<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:12px;overflow:hidden;">
+<table style="width:100%;border-collapse:collapse;">
+  <thead><tr><th>DNI</th><th>Preguntas</th><th>Correctas</th><th>Precisión</th><th>XP</th><th>Última actividad</th></tr></thead>
+  <tbody>
+  ${lista.filter(a=>!D.filtro||a.dni.includes(D.filtro)).map(a=>{
+    const pct=a.total?Math.round(a.ok/a.total*100):0;
+    return`<tr>
+      <td style="font-weight:600;color:#f1f5f9;">${a.dni}</td>
+      <td>${a.total}</td>
+      <td style="color:#4ade80;">${a.ok}</td>
+      <td><div style="display:flex;align-items:center;gap:7px;">
+        <div style="height:4px;width:60px;background:#131f35;border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${pct>=70?"#22c55e":pct>=40?"#fbbf24":"#ef4444"};"></div></div>
+        <span style="font-size:12px;color:${pct>=70?"#4ade80":pct>=40?"#fbbf24":"#f87171"};font-weight:600;">${pct}%</span>
+      </div></td>
+      <td style="color:#fbbf24;font-weight:600;">${a.xp}</td>
+      <td style="color:#475569;">${a.ultima||"—"}</td>
+    </tr>`;
+  }).join("")}
+  </tbody>
+</table></div></div>`;
+}
+
+function rTemas(){
+  const d=D.datos;
+  const porTema={};
+  d.sesiones.forEach(s=>{
+    if(!porTema[s.tema])porTema[s.tema]={tema:s.tema,total:0,ok:0};
+    porTema[s.tema].total++;
+    if(s.correcta==="Correcta")porTema[s.tema].ok++;
+  });
+  const lista=Object.values(porTema).filter(t=>t.total>=2).sort((a,b)=>{
+    const ra=a.ok/a.total, rb=b.ok/b.total;
+    return ra-rb; // más difíciles primero
+  });
+  return`<div class="fu">
+<div style="font-size:12px;color:#64748b;margin-bottom:14px;">Ordenado por dificultad (mayor error primero). Solo temas con 2+ respuestas.</div>
+<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:12px;overflow:hidden;">
+<table style="width:100%;border-collapse:collapse;">
+  <thead><tr><th>Tema</th><th>Respuestas</th><th>Correctas</th><th>Dificultad</th></tr></thead>
+  <tbody>
+  ${lista.map(t=>{
+    const pct=Math.round(t.ok/t.total*100);
+    const dif=pct<40?"Alta":pct<70?"Media":"Baja";
+    const col=pct<40?"#f87171":pct<70?"#fbbf24":"#4ade80";
+    return`<tr>
+      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.tema}</td>
+      <td>${t.total}</td>
+      <td style="color:#4ade80;">${t.ok}</td>
+      <td><span style="padding:3px 10px;background:${col}18;border:1px solid ${col}44;border-radius:20px;font-size:11px;color:${col};font-weight:600;">${dif} (${pct}% acierto)</span></td>
+    </tr>`;
+  }).join("")}
+  </tbody>
+</table></div></div>`;
+}
+
+function rSesiones(){
+  const d=D.datos;
+  const recientes=d.sesiones.slice(-50).reverse();
+  return`<div class="fu">
+<div style="font-size:12px;color:#64748b;margin-bottom:14px;">Últimas 50 respuestas del grupo.</div>
+<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:12px;overflow:hidden;overflow-x:auto;">
+<table style="width:100%;border-collapse:collapse;min-width:600px;">
+  <thead><tr><th>DNI</th><th>Fecha</th><th>Tema</th><th>Tipo</th><th>Resultado</th><th>XP</th><th>Metacognición</th></tr></thead>
+  <tbody>
+  ${recientes.map(s=>`<tr>
+    <td style="font-weight:600;color:#94a3b8;">${s.dni}</td>
+    <td style="color:#475569;">${s.fecha} ${s.hora||""}</td>
+    <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.tema}</td>
+    <td style="color:#64748b;">${s.tipo||"—"}</td>
+    <td><span style="color:${s.correcta==="Correcta"?"#4ade80":"#f87171"};font-weight:600;">${s.correcta==="Correcta"?"✓":"✗"}</span></td>
+    <td style="color:#fbbf24;">${s.xp||0}</td>
+    <td style="color:#64748b;font-size:12px;">${s.meta||"—"}</td>
+  </tr>`).join("")}
+  </tbody>
+</table></div></div>`;
+}
+
+async function cargarDatos(){
+  D.cargando=true;D.error="";render();
+  try{
+    const r=await fetch("/api/get-all-data");
+    if(!r.ok){const e=await r.text();throw new Error(e);}
+    D.datos=await r.json();
+  }catch(e){
+    D.error="No se pudieron cargar los datos: "+e.message;
+  }
+  D.cargando=false;render();
+}
+
+function ev(){
+  const ipin=document.getElementById("ipin");
+  if(ipin){
+    ipin.addEventListener("input",e=>{D.pin=e.target.value;D.pinErr=false;});
+    ipin.addEventListener("keydown",e=>{if(e.key==="Enter")tryPin();});
+    ipin.focus();
+  }
+  document.getElementById("bentrar")?.addEventListener("click",tryPin);
+  document.getElementById("brecargar")?.addEventListener("click",cargarDatos);
+  document.querySelectorAll("[data-vista]").forEach(el=>el.addEventListener("click",()=>{D.vista=el.dataset.vista;render();}));
+  const ifiltro=document.getElementById("ifiltro");
+  if(ifiltro)ifiltro.addEventListener("input",e=>{D.filtro=e.target.value;render();});
+}
+
+function tryPin(){
+  if(D.pin===PIN_DOCENTE){D.auth=true;render();cargarDatos();}
+  else{D.pinErr=true;render();}
+}
+
+render();
+</script>
+</body>
+</html>

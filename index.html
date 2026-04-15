@@ -796,28 +796,59 @@ function rMapa(){
 }
 
 function rMapaGeneral(){
+  const totalTemas=UNITS.reduce((s,u)=>s+u.temas.length,0);
+  const totalSel=UNITS.reduce((s,u)=>s+u.temas.filter(t=>S.sel.has(t.id)).length,0);
+  const totalPract=Object.keys(S.historial).length;
+  const paraRepasar=temasParaRepasar().length;
   return`<div>
 <div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
   <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
   <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">Mapa de contenidos</div><div style="font-size:11px;color:#475569;">Curtis Biología 7ma ed.</div></div>
 </div>
 <div style="max-width:640px;margin:0 auto;padding:16px 16px 100px;">
-  <div style="font-size:13px;color:#64748b;margin-bottom:14px;">Tocá una unidad para ver el detalle y tu progreso por tema.</div>
+  <!-- Resumen global -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px;">
+    <div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:11px;padding:11px;text-align:center;">
+      <div style="font-size:19px;font-weight:800;color:#f1f5f9;">${totalSel}</div>
+      <div style="font-size:10px;color:#475569;margin-top:2px;">de ${totalTemas} activos</div>
+    </div>
+    <div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:11px;padding:11px;text-align:center;">
+      <div style="font-size:19px;font-weight:800;color:#4ade80;">${totalPract}</div>
+      <div style="font-size:10px;color:#475569;margin-top:2px;">practicados</div>
+    </div>
+    <div style="background:#0d1626;border:1px solid ${paraRepasar>0?"rgba(251,191,36,.25)":"rgba(148,163,184,.08)"};border-radius:11px;padding:11px;text-align:center;">
+      <div style="font-size:19px;font-weight:800;color:${paraRepasar>0?"#fbbf24":"#f1f5f9"};">${paraRepasar}</div>
+      <div style="font-size:10px;color:#475569;margin-top:2px;">para repasar hoy</div>
+    </div>
+  </div>
   ${UNITS.map(u=>{
     const nSel=u.temas.filter(t=>S.sel.has(t.id)).length;
-    const pct=Math.round(nSel/u.temas.length*100);
-    return`<div data-munit="${u.id}" style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:13px;padding:15px;margin-bottom:10px;cursor:pointer;transition:border-color .15s;" class="fu"
-      onmouseover="this.style.borderColor='${u.col}44'" onmouseout="this.style.borderColor='rgba(148,163,184,.08)'">
-      <div style="display:flex;align-items:center;gap:11px;margin-bottom:10px;">
-        <div style="width:38px;height:38px;background:${u.col}16;border:1px solid ${u.col}28;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${u.ico}</div>
+    const nPract=u.temas.filter(t=>S.historial[t.id]).length;
+    const nFail=u.temas.filter(t=>(S.historial[t.id]?.fail||0)>0).length;
+    const pctSel=Math.round(nSel/u.temas.length*100);
+    const pctDom=Math.round(nPract/u.temas.length*100);
+    return`<div data-munit="${u.id}" style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:13px;padding:14px;margin-bottom:9px;cursor:pointer;transition:border-color .15s;" class="fu"
+      onmouseover="this.style.borderColor='${u.col}55'" onmouseout="this.style.borderColor='rgba(148,163,184,.08)'">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;">
+        <div style="width:36px;height:36px;background:${u.col}16;border:1px solid ${u.col}28;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;">${u.ico}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;font-weight:700;color:#f1f5f9;">${u.nom}</div>
-          <div style="font-size:11px;color:#475569;">${u.temas.length} temas · ${nSel} en entrenamiento</div>
+          <div style="font-size:13px;font-weight:700;color:#f1f5f9;">${u.nom}</div>
+          <div style="display:flex;gap:8px;margin-top:3px;flex-wrap:wrap;">
+            <span style="font-size:10px;color:#475569;">${nSel}/${u.temas.length} activos</span>
+            ${nPract>0?`<span style="font-size:10px;color:#4ade80;">✓ ${nPract} practicados</span>`:""}
+            ${nFail>0?`<span style="font-size:10px;color:#f87171;">✗ ${nFail} con errores</span>`:""}
+          </div>
         </div>
-        <div style="font-size:12px;color:${u.col};font-weight:700;">${pct}%</div>
+        <div style="font-size:18px;color:#475569;">▸</div>
       </div>
-      <div style="height:4px;background:#131f35;border-radius:3px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:${u.col};border-radius:3px;transition:width .6s;"></div>
+      <!-- Barra doble: activos (fondo) + dominados (encima) -->
+      <div style="height:5px;background:#131f35;border-radius:3px;overflow:hidden;position:relative;">
+        <div style="position:absolute;height:100%;width:${pctSel}%;background:${u.col}40;border-radius:3px;"></div>
+        <div style="position:absolute;height:100%;width:${pctDom}%;background:${u.col};border-radius:3px;transition:width .6s;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;">
+        <span style="font-size:9px;color:#334155;">En entrenamiento: ${pctSel}%</span>
+        <span style="font-size:9px;color:${u.col};">Practicado: ${pctDom}%</span>
       </div>
     </div>`;
   }).join("")}
@@ -834,22 +865,40 @@ function rMapaGeneral(){
 </div>`;}
 
 function rMapaDetalle(u){
+  const hoy=new Date().toISOString().split("T")[0];
   return`<div>
 <div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
   <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
   <div style="width:28px;height:28px;background:${u.col}18;border:1px solid ${u.col}30;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">${u.ico}</div>
-  <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">${u.nom}</div><div style="font-size:11px;color:#475569;">${u.temas.length} temas</div></div>
+  <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">${u.nom}</div><div style="font-size:11px;color:#475569;">${u.temas.length} temas · cap. ${u.temas[0]?.cap}</div></div>
 </div>
-<div style="max-width:640px;margin:0 auto;padding:16px 16px 80px;">
+<div style="max-width:640px;margin:0 auto;padding:14px 16px 80px;">
   ${u.temas.map(t=>{
     const activo=S.sel.has(t.id);
-    return`<div style="background:#0d1626;border:1.5px solid ${activo?u.col+"44":"rgba(148,163,184,.08)"};border-radius:12px;padding:14px;margin-bottom:9px;display:flex;align-items:center;gap:12px;" class="fu">
-      <div style="width:32px;height:32px;border-radius:8px;background:${activo?u.col+"18":"rgba(148,163,184,.06)"};border:1px solid ${activo?u.col+"33":"rgba(148,163,184,.1)"};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">${activo?"✓":"○"}</div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:${activo?700:400};color:${activo?"#f1f5f9":"#94a3b8"};line-height:1.4;">${t.nom}</div>
-        <div style="font-size:11px;color:#334155;margin-top:3px;">Curtis cap. ${t.cap}</div>
+    const h=S.historial[t.id];
+    const nOk=h?.ok||0, nFail=h?.fail||0, total=nOk+nFail;
+    const pct=total>0?Math.round(nOk/total*100):null;
+    const necesitaRepaso=h?.nextDate&&h.nextDate<=hoy;
+    let estado="",estadoCol="#475569";
+    if(!h){estado="Sin practicar";estadoCol="#334155";}
+    else if(necesitaRepaso){estado="⟳ Repasar hoy";estadoCol="#fbbf24";}
+    else if(pct>=80){estado="✓ Dominado";estadoCol="#4ade80";}
+    else if(pct>=50){estado="En progreso";estadoCol=u.col;}
+    else{estado="Necesita trabajo";estadoCol="#f87171";}
+    return`<div style="background:#0d1626;border:1.5px solid ${activo?u.col+"44":"rgba(148,163,184,.08)"};border-radius:12px;padding:13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;" class="fu">
+      <!-- Indicador de dominio -->
+      <div style="width:34px;height:34px;border-radius:8px;background:${activo?u.col+"18":"rgba(148,163,184,.06)"};border:1px solid ${activo?u.col+"33":"rgba(148,163,184,.1)"};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;font-weight:700;color:${pct!==null?estadoCol:"#334155"};">
+        ${pct!==null?pct+"%":"—"}
       </div>
-      <button data-toggle="${t.id}" style="padding:6px 12px;background:${activo?u.col+"18":"rgba(148,163,184,.06)"};border:1px solid ${activo?u.col+"44":"rgba(148,163,184,.15)"};border-radius:8px;color:${activo?u.col:"#64748b"};font-size:12px;font-weight:600;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:${activo?600:400};color:${activo?"#f1f5f9":"#94a3b8"};line-height:1.35;">${t.nom}</div>
+        <div style="display:flex;gap:8px;margin-top:3px;align-items:center;">
+          <span style="font-size:10px;color:#334155;">cap. ${t.cap}</span>
+          ${total>0?`<span style="font-size:10px;color:#475569;">${nOk}✓ ${nFail}✗</span>`:""}
+          <span style="font-size:10px;color:${estadoCol};font-weight:600;">${estado}</span>
+        </div>
+      </div>
+      <button data-toggle="${t.id}" style="padding:5px 10px;background:${activo?u.col+"18":"rgba(148,163,184,.06)"};border:1px solid ${activo?u.col+"44":"rgba(148,163,184,.15)"};border-radius:8px;color:${activo?u.col:"#64748b"};font-size:11px;font-weight:600;flex-shrink:0;">
         ${activo?"Activo":"+ Agregar"}
       </button>
     </div>`;
@@ -1235,13 +1284,39 @@ function tryPin(){
   }else{S.pinErr=true;render();}
 }
 
-function tryLogin(){
+async function tryLogin(){
   const dni=document.getElementById("idni")?.value?.trim()||"";
   const clave=document.getElementById("iclave")?.value?.trim()||"";
   if(!dni||dni.length<6){S.claveErr=true;render();return;}
   if(clave!==CLAVE_ALUMNO){S.claveErr=true;render();return;}
   S.dni=dni;S.nombre=dni;S.clave=clave;S.claveErr=false;
   S.pan="home";saveLocal();render();
+  // Intentar sincronizar historial desde Sheets en background
+  sincronizarDesdeSheets(dni);
+}
+
+async function sincronizarDesdeSheets(dni){
+  try{
+    const r=await fetch("/api/get-progress?dni="+encodeURIComponent(dni),{method:"GET"});
+    if(!r.ok)return;
+    const data=await r.json();
+    if(!data.historial)return;
+    // Mergear: tomar el valor más reciente por tema
+    let actualizado=false;
+    for(const [tid,h] of Object.entries(data.historial)){
+      const local=S.historial[tid];
+      // Si el remoto tiene más práctica, usarlo
+      if(!local||(h.ok+h.fail)>(local.ok+local.fail)){
+        S.historial[tid]=h;
+        actualizado=true;
+      }
+    }
+    if(data.xp&&data.xp>S.xp){S.xp=data.xp;actualizado=true;}
+    if(data.racha&&data.racha>S.racha){S.racha=data.racha;actualizado=true;}
+    if(actualizado){saveLocal();render();console.log("Historial sincronizado desde Sheets");}
+  }catch(e){
+    console.log("Sin sincronización remota (sin conexión o sin datos previos)");
+  }
 }
 
 async function iniciar(modo="normal"){

@@ -42,21 +42,38 @@ export default async function handler(req, res) {
     ]);
 
     // 3 — Append a Google Sheets
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Hoja1!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-
-    const resp = await fetch(url, {
+    // Guardar resultados de sesión en Hoja1
+    const url1 = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Hoja1!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const resp1 = await fetch(url1, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ values: filas }),
     });
+    if (!resp1.ok) {
+      const err = await resp1.text();
+      console.error("Sheets Hoja1 error:", err);
+      return res.status(resp1.status).json({ error: err });
+    }
 
-    if (!resp.ok) {
-      const err = await resp.text();
-      console.error("Sheets error:", err);
-      return res.status(resp.status).json({ error: err });
+    // Guardar historial SM-2 en hoja "Progreso" (upsert por DNI)
+    if (req.body.historial && Object.keys(req.body.historial).length > 0) {
+      try {
+        const ahora = new Date();
+        const filaProgreso = [[
+          String(dni),
+          ahora.toISOString(),
+          JSON.stringify(req.body.historial),
+          String(req.body.xp_total || 0),
+        ]];
+        const url2 = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Progreso!A:D:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+        await fetch(url2, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ values: filaProgreso }),
+        });
+      } catch(e) {
+        console.warn("No se pudo guardar en hoja Progreso:", e.message);
+      }
     }
 
     return res.status(200).json({ ok: true, filas: filas.length });
