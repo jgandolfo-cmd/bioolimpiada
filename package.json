@@ -1,0 +1,9 @@
+{
+  "name": "bioolimpiada-oab",
+  "version": "1.0.0",
+  "description": "Plataforma de entrenamiento OAB — Curtis Biología 7ma ed.",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}
