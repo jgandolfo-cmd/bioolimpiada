@@ -211,17 +211,24 @@ let _aiQueue=Promise.resolve();
 function _delay(ms){return new Promise(r=>setTimeout(r,ms));}
 
 async function ai(prompt, intentos=3){
-  // Encadenar en cola: cada llamada espera que termine la anterior
-  _aiQueue=_aiQueue.then(()=>_delay(300)); // 300ms entre llamadas
+  // Encadenar en cola con catch para que un fallo no bloquee la cola
+  _aiQueue=_aiQueue.catch(()=>{}).then(()=>_delay(300));
   await _aiQueue;
 
   for(let i=0;i<intentos;i++){
     try{
-      const r=await fetch(API_URL,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({messages:[{role:"user",content:prompt}],max_tokens:1500})
-      });
+      // Timeout de 15s para no quedar colgado
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),15000);
+      let r;
+      try{
+        r=await fetch(API_URL,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({messages:[{role:"user",content:prompt}],max_tokens:1500}),
+          signal:controller.signal
+        });
+      }finally{clearTimeout(timeout);}
       if(r.status===429){
         // Rate limit: esperar más y reintentar
         const espera=4000*(i+1); // 4s, 8s, 12s
