@@ -566,7 +566,7 @@ function rSes(){
     <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;margin-bottom:4px;"><span>Pregunta ${ses.idx+1}/${tot}</span><span style="color:#fbbf24;font-weight:700;">${ses.res.filter(r=>r.ok).length} correctas</span></div>
     <div style="height:4px;background:#131f35;border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.round((ses.idx/tot)*100)}%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width .5s;"></div></div>
   </div>
-  <button id="babortar" style="background:none;border:1px solid rgba(148,163,184,.18);border-radius:7px;color:#64748b;font-size:11px;padding:4px 8px;flex-shrink:0;">✕ Salir</button>
+  <button id="babortar" style="background:rgba(239,68,68,.12);border:1.5px solid rgba(239,68,68,.35);border-radius:8px;color:#f87171;font-size:12px;font-weight:700;padding:5px 11px;flex-shrink:0;">✕ Salir</button>
 </div>
 <div style="max-width:640px;margin:0 auto;padding:18px 16px 40px;">
   ${ac.fase==="cargando"?rLoad():ac.fase==="res"?rQ(q,ac):ac.fase==="dlg"?rDlg(q,ac):ac.fase==="ok"?rOkF(q):rRevF(q)}
@@ -959,6 +959,8 @@ function ev(){
     ibusq.addEventListener("input",e=>{S.busqTxt=e.target.value;});
     ibusq.addEventListener("keydown",e=>{if(e.key==="Enter")buscar();});
     ibusq.focus();
+    // Mostrar el valor guardado si volvió a la pantalla
+    if(S.busqTxt) ibusq.value=S.busqTxt;
   }
   document.getElementById("bbuscar")?.addEventListener("click",buscar);
   document.querySelectorAll("[data-sug]").forEach(el=>el.addEventListener("click",()=>{
@@ -1076,16 +1078,23 @@ async function siguiente(){
 }
 
 // ── BUSCADOR ─────────────────────────────────────────────────
+// Normaliza texto: minúsculas + sin tildes
+function sinAcentos(s){
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+}
+
 async function buscar(){
   if(!S.busqTxt.trim())return;
   S.busqLoad=true;S.busqRes=null;render();
 
-  // Encontrar tema relacionado en UNITS
-  const termLower=S.busqTxt.toLowerCase();
+  // Buscar tema relacionado ignorando acentos y mayúsculas
+  const termN=sinAcentos(S.busqTxt);
   let temaMatch=null;
   for(const u of UNITS){
     for(const t of u.temas){
-      if(t.nom.toLowerCase().includes(termLower)||termLower.includes(t.nom.toLowerCase().split(":")[0].trim().toLowerCase())){
+      const nomN=sinAcentos(t.nom);
+      const nomBase=sinAcentos(t.nom.split(":")[0]);
+      if(nomN.includes(termN)||termN.includes(nomBase)||sinAcentos(t.nom.split(" ")[0]).startsWith(termN.split(" ")[0])){
         temaMatch={...t,ucol:u.col,unom:u.nom};break;
       }
     }
