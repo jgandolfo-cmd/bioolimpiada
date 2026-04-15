@@ -43,7 +43,7 @@ export default async function handler(req, res) {
 
     // 3 — Append a Google Sheets
     // Guardar resultados de sesión en Hoja1
-    const url1 = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Hoja1!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const url1 = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/'Hoja 1'!A:J:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const resp1 = await fetch(url1, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },

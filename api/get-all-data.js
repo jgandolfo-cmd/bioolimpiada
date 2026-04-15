@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     const token = await getGoogleToken(serviceEmail, privateKey);
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Hoja1!A:J`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/'Hoja 1'!A:J`;
     const r = await fetch(url, { headers: { "Authorization": `Bearer ${token}` } });
 
     if (!r.ok) {
