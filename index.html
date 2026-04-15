@@ -191,7 +191,8 @@ async function guardarEnSheets(resultados){
         resultados,
         modo:S.ses.modo||"normal",
         xp_total:S.xp,
-        racha:S.racha
+        racha:S.racha,
+        historial:S.historial // para recuperar SM-2 desde otro dispositivo
       })
     });
   }catch(e){
@@ -205,25 +206,44 @@ function lvl(){return LVLS.find(l=>S.xp<l.mx)||LVLS[LVLS.length-1];}
 function lvlPct(){const i=LVLS.findIndex(l=>S.xp<l.mx);const p=i>0?LVLS[i-1].mx:0;const l=LVLS[i];return Math.min(100,Math.round((S.xp-p)/(l.mx-p)*100));}
 
 // ── IA — PROXY SEGURO ─────────────────────────────────────────
-async function ai(prompt){
-  const r=await fetch(API_URL,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      messages:[{role:"user",content:prompt}],
-      max_tokens:1500
-    })
-  });
-  if(!r.ok){
-    const e=await r.text();
-    console.error("API error",r.status,":",e);
-    throw new Error("Error "+r.status+": "+e.slice(0,200));
+// Cola simple para serializar llamadas a la IA y evitar 429
+let _aiQueue=Promise.resolve();
+function _delay(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function ai(prompt, intentos=3){
+  // Encadenar en cola: cada llamada espera que termine la anterior
+  _aiQueue=_aiQueue.then(()=>_delay(300)); // 300ms entre llamadas
+  await _aiQueue;
+
+  for(let i=0;i<intentos;i++){
+    try{
+      const r=await fetch(API_URL,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({messages:[{role:"user",content:prompt}],max_tokens:1500})
+      });
+      if(r.status===429){
+        // Rate limit: esperar más y reintentar
+        const espera=4000*(i+1); // 4s, 8s, 12s
+        console.warn(`Rate limit 429 — esperando ${espera/1000}s antes de reintentar (intento ${i+1}/${intentos})`);
+        await _delay(espera);
+        continue;
+      }
+      if(!r.ok){
+        const e=await r.text();
+        console.error("API error",r.status,":",e);
+        throw new Error("Error "+r.status+": "+e.slice(0,200));
+      }
+      const d=await r.json();
+      const txt=(d.content?.[0]?.text||"").trim();
+      if(!txt) throw new Error("Respuesta vacía del servidor");
+      return txt;
+    }catch(e){
+      if(i===intentos-1) throw e; // último intento: relanzar
+      await _delay(2000);
+    }
   }
-  const d=await r.json();
-  // Gemini devuelve content[0].text via nuestro proxy
-  const txt=(d.content?.[0]?.text||"").trim();
-  if(!txt) throw new Error("Respuesta vacía del servidor");
-  return txt;
+  throw new Error("No se pudo conectar después de "+intentos+" intentos");
 }
 
 function parseJ(txt){
@@ -545,20 +565,11 @@ ${S.showSalir?`<div id="salir-overlay" style="position:fixed;inset:0;background:
 
 <!-- NAV INFERIOR -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
-  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-    <button id="bnav-home" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;">
-      <span style="font-size:16px;">🏠</span>Inicio
-    </button>
-    <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
-      <span style="font-size:16px;">🗺️</span>Mapa
-    </button>
-    <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
-      <span style="font-size:16px;">🔍</span>Buscar
-    </button>
-    <button id="bdiario" style="padding:9px;background:#0d1626;border:1px solid ${S.errores.length>0?"rgba(239,68,68,.25)":"rgba(148,163,184,.1)"};border-radius:10px;color:${S.errores.length>0?"#f87171":"#94a3b8"};font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;">
-      <span style="font-size:16px;">📒</span>Errores
-      ${S.errores.length>0?`<span style="position:absolute;top:-3px;right:-3px;background:#ef4444;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;">${Math.min(S.errores.length,99)}</span>`:""}
-    </button>
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;">
+    <button id="bnav-home" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🔍</span>Buscar</button>
+    <button id="bdiario" style="padding:8px 4px;background:#0d1626;border:1px solid ${S.errores.length>0?"rgba(239,68,68,.25)":"rgba(148,163,184,.1)"};border-radius:10px;color:${S.errores.length>0?"#f87171":"#94a3b8"};font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;"><span style="font-size:16px;">📒</span>Errores${S.errores.length>0?`<span style="position:absolute;top:-3px;right:-3px;background:#ef4444;border-radius:50%;width:15px;height:15px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;">${Math.min(S.errores.length,99)}</span>`:""}</button>
   </div>
 </div>
 </div>`;
@@ -806,10 +817,11 @@ function rMapaGeneral(){
 </div>
 <!-- NAV INFERIOR -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
-  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-    <button id="bnav-home" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🏠</span>Inicio</button>
-    <button id="bnav-mapa" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🗺️</span>Mapa</button>
-    <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🔍</span>Buscar</button>
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;">
+    <button id="bnav-home" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🔍</span>Buscar</button>
+    <button id="bdiario" style="padding:8px 4px;background:#0d1626;border:1px solid ${S.errores.length>0?"rgba(239,68,68,.25)":"rgba(148,163,184,.1)"};border-radius:10px;color:${S.errores.length>0?"#f87171":"#94a3b8"};font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;"><span style="font-size:16px;">📒</span>Errores${S.errores.length>0?`<span style="position:absolute;top:-3px;right:-3px;background:#ef4444;border-radius:50%;width:15px;height:15px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;">${Math.min(S.errores.length,99)}</span>`:""}</button>
   </div>
 </div>
 </div>`;}
@@ -906,10 +918,11 @@ function rBuscar(){
 
 <!-- NAV INFERIOR -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
-  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-    <button id="bnav-home" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🏠</span>Inicio</button>
-    <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🗺️</span>Mapa</button>
-    <button id="bnav-buscar" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🔍</span>Buscar</button>
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;">
+    <button id="bnav-home" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🔍</span>Buscar</button>
+    <button id="bdiario" style="padding:8px 4px;background:#0d1626;border:1px solid ${S.errores.length>0?"rgba(239,68,68,.25)":"rgba(148,163,184,.1)"};border-radius:10px;color:${S.errores.length>0?"#f87171":"#94a3b8"};font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;"><span style="font-size:16px;">📒</span>Errores${S.errores.length>0?`<span style="position:absolute;top:-3px;right:-3px;background:#ef4444;border-radius:50%;width:15px;height:15px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;">${Math.min(S.errores.length,99)}</span>`:""}</button>
   </div>
 </div>
 </div>`;}
@@ -921,6 +934,7 @@ function rDiario(){
 <div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
   <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
   <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">Diario de errores</div><div style="font-size:11px;color:#475569;">${errs.length} conceptos para reforzar</div></div>
+  ${errs.length>0?`<button id="blimpiar-diario" style="background:none;border:1px solid rgba(148,163,184,.15);border-radius:8px;color:#64748b;font-size:11px;padding:5px 10px;">Limpiar</button>`:""}
 </div>
 <div style="max-width:640px;margin:0 auto;padding:16px 16px 80px;">
   ${errs.length===0?`<div style="text-align:center;padding:40px 0;">
@@ -944,10 +958,11 @@ function rDiario(){
 </div>
 <!-- NAV INFERIOR -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
-  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-    <button id="bnav-home" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🏠</span>Inicio</button>
-    <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🗺️</span>Mapa</button>
-    <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🔍</span>Buscar</button>
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;">
+    <button id="bnav-home" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:8px 4px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:16px;">🔍</span>Buscar</button>
+    <button id="bdiario" style="padding:8px 4px;background:#0d1626;border:1px solid ${S.errores.length>0?"rgba(239,68,68,.25)":"rgba(148,163,184,.1)"};border-radius:10px;color:${S.errores.length>0?"#f87171":"#94a3b8"};font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;"><span style="font-size:16px;">📒</span>Errores${S.errores.length>0?`<span style="position:absolute;top:-3px;right:-3px;background:#ef4444;border-radius:50%;width:15px;height:15px;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;">${Math.min(S.errores.length,99)}</span>`:""}</button>
   </div>
 </div>
 </div>`;}
@@ -990,12 +1005,13 @@ async function explicarSimple(){
 
 // ── CONEXIONES ENTRE CONCEPTOS ───────────────────────────────
 async function mostrarConexiones(q){
-  // Llamada async — resultado se muestra en la pantalla ok/rev
+  // Esperar 2s antes de pedir conexiones para no competir con evaluación
+  await new Promise(r=>setTimeout(r,2000));
   try{
-    const txt=await ai(`Dado el concepto "${q.tmNom}" de Curtis Biología cap. ${q.tmCap}, listá exactamente 3 conceptos del mismo libro que están directamente relacionados. Solo los nombres, separados por coma, sin explicación. Ej: "Fotosíntesis, Cloroplasto, ATP"`);
+    const txt=await ai(`Dado el concepto "${q.tmNom}" de Curtis Biología cap. ${q.tmCap}, listá exactamente 3 conceptos del mismo libro directamente relacionados. Solo los nombres separados por coma, sin explicación. Ej: "Fotosíntesis, Cloroplasto, ATP"`);
     S.ses.conexiones=txt.split(",").map(s=>s.trim()).filter(Boolean).slice(0,3);
   }catch(e){
-    S.ses.conexiones=[];
+    S.ses.conexiones=[]; // falló silenciosamente — no es crítico
   }
   render();
 }
@@ -1071,6 +1087,9 @@ function ev(){
     if(confirm("Simulacro OAB: 20 preguntas, sin pistas, sin socrático. ¿Listo?"))iniciar("simulacro");
   });
   document.getElementById("bdiario")?.addEventListener("click",()=>{S.pan="diario";render();});
+  document.getElementById("blimpiar-diario")?.addEventListener("click",()=>{
+    if(confirm("¿Limpiar todos los errores del diario?")){S.errores=[];saveLocal();render();}
+  });
   document.getElementById("bbk")?.addEventListener("click",()=>{
     if(S.pan==="mapa"&&S.mapaUnit){S.mapaUnit=null;render();}
     else if(S.pan==="mapa"||S.pan==="buscar"){S.pan="home";render();}
@@ -1096,17 +1115,52 @@ function ev(){
   document.getElementById("bnxt")?.addEventListener("click",siguiente);
   // Metacognición — botones de autoevaluación
   document.getElementById("bmeta-ok")?.addEventListener("click",()=>{
-    const xp=parseInt(document.getElementById("bmeta-ok")?.dataset.xp||"40");
-    const r=S.ses.res[S.ses.res.length-1];if(r){r.meta="completo";r.xp=xp;S.xp+=xp;}
+    const xpNuevo=parseInt(document.getElementById("bmeta-ok")?.dataset.xp||"40");
+    const r=S.ses.res[S.ses.res.length-1];
+    if(r){
+      const diff=xpNuevo-(r.xp||0); // diferencia respecto al XP ya sumado
+      S.xp+=diff; r.xp=xpNuevo; r.meta="completo";
+      // Actualizar SM-2 con metacognición
+      const q=S.ses.pregs[S.ses.idx];
+      if(q?.tid) sm2Update(q.tid, true, "completo");
+    }
     saveLocal();siguiente();
   });
   document.getElementById("bmeta-parcial")?.addEventListener("click",()=>{
-    const xp=parseInt(document.getElementById("bmeta-parcial")?.dataset.xp||"24");
-    const r=S.ses.res[S.ses.res.length-1];if(r){r.meta="parcial";r.xp=xp;S.xp+=xp;}
+    const xpNuevo=parseInt(document.getElementById("bmeta-parcial")?.dataset.xp||"24");
+    const r=S.ses.res[S.ses.res.length-1];
+    if(r){
+      const diff=xpNuevo-(r.xp||0);
+      S.xp+=diff; r.xp=xpNuevo; r.meta="parcial";
+      const q=S.ses.pregs[S.ses.idx];
+      if(q?.tid) sm2Update(q.tid, true, "parcial");
+      // Agregar al diario: entendió pero le faltó algo
+      if(q) S.errores.push({
+        fecha:new Date().toISOString().split("T")[0],
+        tema:q.tmNom, cap:q.tmCap||"",
+        pregunta:q.enunc?.substring(0,120)||"",
+        respCorrecta:q.tipo==="mc"?(q.ops?.[q.ok]||"").replace(/^[A-D]\)\s*/,""):q.resp||q.expl||"",
+        meta:"parcial"
+      });
+    }
     saveLocal();siguiente();
   });
   document.getElementById("bmeta-no")?.addEventListener("click",()=>{
-    const r=S.ses.res[S.ses.res.length-1];if(r){r.meta="no";r.xp=5;S.xp+=5;}
+    const r=S.ses.res[S.ses.res.length-1];
+    if(r){
+      const diff=5-(r.xp||0);
+      S.xp+=diff; r.xp=5; r.meta="no";
+      const q=S.ses.pregs[S.ses.idx];
+      if(q?.tid) sm2Update(q.tid, false, "no");
+      // Agregar al diario
+      if(q) S.errores.push({
+        fecha:new Date().toISOString().split("T")[0],
+        tema:q.tmNom, cap:q.tmCap||"",
+        pregunta:q.enunc?.substring(0,120)||"",
+        respCorrecta:q.tipo==="mc"?(q.ops?.[q.ok]||"").replace(/^[A-D]\)\s*/,""):q.resp||q.expl||"",
+        meta:"no"
+      });
+    }
     saveLocal();siguiente();
   });
   document.getElementById("bvosel")?.addEventListener("click",()=>{S.pan="sel";render();});
@@ -1116,6 +1170,9 @@ function ev(){
   document.getElementById("bnav-mapa")?.addEventListener("click",()=>{S.mapaUnit=null;S.pan="mapa";render();});
   document.getElementById("bnav-buscar")?.addEventListener("click",()=>{S.pan="buscar";render();setTimeout(()=>document.getElementById("ibusq")?.focus(),80);});
   document.getElementById("bdiario")?.addEventListener("click",()=>{S.pan="diario";render();});
+  document.getElementById("blimpiar-diario")?.addEventListener("click",()=>{
+    if(confirm("¿Limpiar todos los errores del diario?")){S.errores=[];saveLocal();render();}
+  });
   // Explicame simple
   document.getElementById("bexplicame")?.addEventListener("click",()=>{
     explicameActivo=!explicameActivo;if(!explicameActivo)explicameRes="";render();
@@ -1231,6 +1288,7 @@ async function enviar(){
   }
   if(q.tipo==="vf"){
     if(evalVF(q,ac.vfs)){fin(q,true,35);return;}
+    if(esSimulacro){fin(q,false,0);return;}
     ac.ronda++;ac.hist.push({r:"a",t:`${ac.vfs?"Verdadero":"Falso"} — ${ac.txt.substring(0,60)}`});
     ac.fase="dlg";ac.load=true;render();
     const rs=await socr(q,ac.hist,ac.ronda);
@@ -1241,6 +1299,7 @@ async function enviar(){
     ac.load=true;render();
     const ok=await evalOpen(q,ac.txt);
     if(ok){fin(q,true,50);return;}
+    if(esSimulacro){fin(q,false,0);return;}
     ac.ronda++;ac.hist.push({r:"a",t:ac.txt.substring(0,120)});
     ac.fase="dlg";ac.load=true;render();
     const rs=await socr(q,ac.hist,ac.ronda);
@@ -1290,16 +1349,16 @@ function fin(q,ok,xp,meta){
 
 async function siguiente(){
   const ni=S.ses.idx+1;
-  if(ni>=S.cfg.n){
+  const total=S.ses.plan.length; // usar largo real del plan (no S.cfg.n)
+  if(ni>=total){
     S.sesiones++;S.racha++;saveLocal();
-    // Guardar en Sheets en background (no bloquear UI)
     guardarEnSheets(S.ses.res);
     S.pan="fin";render();return;
   }
   S.ses.idx=ni;S.ses.act={fase:"cargando",ronda:0,hist:[],load:false,sel:null,txt:"",vfs:null};render();
   if(!S.ses.pregs[ni]){const p=S.ses.plan[ni];S.ses.pregs[ni]=await genQ(p.tema,p.tipo);}
   S.ses.act.fase="res";S.ses.conexiones=[];render();
-  if(ni+1<S.ses.plan.length&&!S.ses.pregs[ni+1])genQ(S.ses.plan[ni+1].tema,S.ses.plan[ni+1].tipo).then(q=>{S.ses.pregs[ni+1]=q;});
+  if(ni+1<total&&!S.ses.pregs[ni+1])genQ(S.ses.plan[ni+1].tema,S.ses.plan[ni+1].tipo).then(q=>{S.ses.pregs[ni+1]=q;});
 }
 
 // ── BUSCADOR ─────────────────────────────────────────────────
