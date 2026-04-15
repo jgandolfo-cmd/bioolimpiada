@@ -167,13 +167,34 @@ async function ai(prompt){
       max_tokens:1500
     })
   });
-  if(!r.ok){const e=await r.text();throw new Error(e);}
+  if(!r.ok){
+    const e=await r.text();
+    console.error("API error",r.status,":",e);
+    throw new Error("Error "+r.status+": "+e.slice(0,200));
+  }
   const d=await r.json();
-  return(d.content?.[0]?.text||"").trim();
+  // Gemini devuelve content[0].text via nuestro proxy
+  const txt=(d.content?.[0]?.text||"").trim();
+  if(!txt) throw new Error("Respuesta vacía del servidor");
+  return txt;
 }
 
 function parseJ(txt){
-  return JSON.parse(txt.replace(/```json|```/g,"").trim());
+  // Gemini a veces envuelve en ```json ... ``` aunque se le pida que no
+  let clean = txt.trim();
+  // Quitar fences de código
+  clean = clean.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
+  // Quitar prefijos de texto antes del JSON
+  const firstBrace = clean.indexOf("{");
+  const firstBracket = clean.indexOf("[");
+  const start = firstBrace>=0 && (firstBracket<0||firstBrace<=firstBracket) ? firstBrace : firstBracket;
+  if(start>0) clean = clean.slice(start);
+  // Quitar sufijos de texto después del JSON
+  const lastBrace = clean.lastIndexOf("}");
+  const lastBracket = clean.lastIndexOf("]");
+  const end = Math.max(lastBrace, lastBracket);
+  if(end>=0) clean = clean.slice(0, end+1);
+  return JSON.parse(clean);
 }
 
 // ── PROMPTS DE GENERACIÓN ────────────────────────────────────
@@ -1093,14 +1114,28 @@ Si el concepto no está en Curtis 7ma ed., igualmente dá la mejor información 
     if(!res.tema_id&&temaMatch)res.tema_id=temaMatch.id;
     S.busqRes=res;
   }catch(e){
-    S.busqRes={
-      icono:"📖",
-      capitulo:"—",
-      paginas:"—",
-      resumen:`No se pudo obtener información sobre "${S.busqTxt}". Verificá tu conexión e intentá de nuevo.`,
-      relacionados:[],
-      tema_id:temaMatch?.id||""
-    };
+    console.error("Error buscador:",e);
+    // Intentar dar una respuesta básica desde el conocimiento del sistema
+    // basada en el match local si existe
+    if(temaMatch){
+      S.busqRes={
+        icono:"📖",
+        capitulo:temaMatch.cap||"—",
+        paginas:"Ver Curtis cap. "+temaMatch.cap,
+        resumen:`${temaMatch.nom} es un tema de ${temaMatch.unom} tratado en Curtis cap. ${temaMatch.cap}. La IA no pudo generar un resumen en este momento. Revisá tu conexión o intentá de nuevo.`,
+        relacionados:[],
+        tema_id:temaMatch.id
+      };
+    } else {
+      S.busqRes={
+        icono:"⚠️",
+        capitulo:"—",
+        paginas:"—",
+        resumen:`Error al conectar con el servidor (${e.message||"sin conexión"}). Revisá tu conexión a internet e intentá de nuevo.`,
+        relacionados:[],
+        tema_id:""
+      };
+    }
   }
   S.busqLoad=false;render();
 }
