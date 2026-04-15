@@ -110,17 +110,55 @@ const LVLS=[{n:"Célula",mx:200},{n:"Tejido",mx:450},{n:"Órgano",mx:800},{n:"Si
 let S={
   pan:"pin",pin:"",pinErr:false,
   mapaUnit:null, busqTxt:"",busqRes:null,busqLoad:false,
-  // Login alumno
   dni:"",nombre:"",clave:"",claveErr:false,loginStep:1,
   xp:0,racha:0,sesiones:0,
   sel:new Set(),exp:new Set(),
   cfg:{n:5,tipos:["mc","open","vf"]},
-  showCfg:false,
-  showSalir:false,
+  showCfg:false, showSalir:false,
+  historial:{},
+  errores:[],
   ses:{plan:[],pregs:[],idx:0,
     act:{fase:"cargando",ronda:0,hist:[],load:false,sel:null,txt:"",vfs:null},
-    res:[]}
+    res:[],modo:"normal"}
 };
+
+// ── SM-2 REPASO ESPACIADO ─────────────────────────────────────
+function sm2Update(tid, ok, meta){
+  const h=S.historial[tid]||{ok:0,fail:0,facil:2.5,nextDate:null,lastDate:null};
+  const hoy=new Date().toISOString().split("T")[0];
+  if(ok){
+    h.ok=(h.ok||0)+1;
+    const bonus=meta==="completo"?0.1:meta==="parcial"?0:meta==="no"?-0.2:0;
+    h.facil=Math.max(1.3,Math.min(2.8,(h.facil||2.5)+bonus));
+    const dias=h.ok===1?1:h.ok===2?3:Math.round((h.ok-1)*h.facil);
+    const prox=new Date();prox.setDate(prox.getDate()+Math.min(dias,21));
+    h.nextDate=prox.toISOString().split("T")[0];
+  } else {
+    h.fail=(h.fail||0)+1;
+    h.facil=Math.max(1.3,(h.facil||2.5)-0.3);
+    const man=new Date();man.setDate(man.getDate()+1);
+    h.nextDate=man.toISOString().split("T")[0];
+  }
+  h.lastDate=hoy;
+  S.historial[tid]=h;
+}
+
+function temasParaRepasar(){
+  const hoy=new Date().toISOString().split("T")[0];
+  return Object.entries(S.historial)
+    .filter(([,h])=>h.nextDate&&h.nextDate<=hoy)
+    .map(([tid])=>tid);
+}
+
+function temasMasDebiles(n=5){
+  return Object.entries(S.historial)
+    .filter(([,h])=>(h.fail||0)>0)
+    .sort(([,a],[,b])=>{
+      const ra=(a.fail||0)/Math.max(1,(a.ok||0)+(a.fail||0));
+      const rb=(b.fail||0)/Math.max(1,(b.ok||0)+(b.fail||0));
+      return rb-ra;
+    }).slice(0,n).map(([tid])=>tid);
+}
 
 // ── STORAGE LOCAL ─────────────────────────────────────────────
 function loadLocal(){
@@ -128,27 +166,36 @@ function loadLocal(){
     const d=JSON.parse(localStorage.getItem("oab_prog")||"{}");
     S.xp=d.xp||0;S.racha=d.racha||0;S.sesiones=d.ses||0;
     S.sel=new Set(d.sel||[]);
-    // Recordar DNI del último login
     if(d.dni){S.dni=d.dni;S.nombre=d.nombre||d.dni;}
+    S.historial=d.historial||{};
+    S.errores=d.errores||[];
   }catch(e){}
 }
 function saveLocal(){
   try{localStorage.setItem("oab_prog",JSON.stringify({
     xp:S.xp,racha:S.racha,ses:S.sesiones,sel:[...S.sel],
-    dni:S.dni,nombre:S.nombre
+    dni:S.dni,nombre:S.nombre,
+    historial:S.historial,
+    errores:S.errores.slice(-100) // guardar últimos 100 errores
   }));}catch(e){}
 }
 
-// Guardar sesión en Google Sheets (async, no bloquea)
+// Guardar en Google Sheets (async, no bloquea UI)
 async function guardarEnSheets(resultados){
   try{
     await fetch(SAVE_URL,{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({dni:S.dni,nombre:S.nombre,resultados})
+      body:JSON.stringify({
+        dni:S.dni,nombre:S.nombre,
+        resultados,
+        modo:S.ses.modo||"normal",
+        xp_total:S.xp,
+        racha:S.racha
+      })
     });
   }catch(e){
-    console.warn("No se pudo guardar en Sheets (sin conexión):",e);
+    console.warn("No se pudo guardar en Sheets:",e);
   }
 }
 
@@ -367,12 +414,13 @@ JSON: {"t":"...","rev":${ul}}`;
 function render(){document.getElementById("root").innerHTML=page();ev();}
 function page(){
   if(S.pan==="pin")return rPin();
-  if(S.pan==="home")return rHome();
+  if(S.pan==="home")return rHome()+rExplicameBtn();
   if(S.pan==="sel")return rSel()+(S.showCfg?rCfgModal():"");
-  if(S.pan==="ses")return rSes();
+  if(S.pan==="ses")return rSes()+rExplicameBtn();
   if(S.pan==="fin")return rFin();
-  if(S.pan==="mapa")return rMapa();
+  if(S.pan==="mapa")return rMapa()+rExplicameBtn();
   if(S.pan==="buscar")return rBuscar();
+  if(S.pan==="diario")return rDiario();
   return"";
 }
 
@@ -466,11 +514,23 @@ ${S.showSalir?`<div id="salir-overlay" style="position:fixed;inset:0;background:
     <div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px;">Elegí tus temas para empezar</div>
     <div style="font-size:12px;color:#92400e;line-height:1.6;">Seleccioná capítulos de Curtis y el sistema genera preguntas específicas.</div>
   </div>`:""}
-  <!-- Botones principales -->
   <button id="bsel" style="width:100%;padding:13px;background:${n>0?"#131f35":"linear-gradient(135deg,#2563eb,#7c3aed)"};border:${n>0?"1px solid rgba(148,163,184,.15)":"none"};border-radius:11px;color:${n>0?"#94a3b8":"#fff"};font-size:14px;font-weight:700;margin-bottom:9px;">
     ${n===0?"📖  Elegir contenidos →":"✏️  Cambiar temas ("+n+" sel.)"}
   </button>
-  ${n>0?`<button id="bstart" style="width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#15803d);border:none;border-radius:11px;color:#fff;font-size:15px;font-weight:700;margin-bottom:18px;">▶  Empezar sesión</button>`:""}
+  ${n>0?`
+  <!-- Modos de sesión -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;">
+    <button id="bstart-normal" style="padding:12px 8px;background:linear-gradient(135deg,#16a34a,#15803d);border:none;border-radius:11px;color:#fff;font-size:13px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <span style="font-size:20px;">▶</span>Practicar
+    </button>
+    <button id="bstart-repaso" style="padding:12px 8px;background:${temasParaRepasar().length>0?"linear-gradient(135deg,#d97706,#b45309)":"#131f35"};border:${temasParaRepasar().length>0?"none":"1px solid rgba(148,163,184,.15)"};border-radius:11px;color:${temasParaRepasar().length>0?"#fff":"#475569"};font-size:13px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;">
+      <span style="font-size:20px;">🔄</span>Repasar
+      ${temasParaRepasar().length>0?`<span style="position:absolute;top:-4px;right:-4px;background:#ef4444;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:800;">${temasParaRepasar().length}</span>`:""}
+    </button>
+    <button id="bstart-simulacro" style="padding:12px 8px;background:linear-gradient(135deg,#7c3aed,#4f46e5);border:none;border-radius:11px;color:#fff;font-size:13px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <span style="font-size:20px;">⏱</span>Simulacro
+    </button>
+  </div>`:""}
   ${n>0?`<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:11px;padding:13px;">
     <div style="font-size:10px;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px;font-weight:700;">Temas activos</div>
     ${[...S.sel].slice(0,5).map(id=>{const t=tById(id);return t?`
@@ -487,13 +547,17 @@ ${S.showSalir?`<div id="salir-overlay" style="position:fixed;inset:0;background:
 <div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
   <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
     <button id="bnav-home" style="padding:9px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.3);border-radius:10px;color:#60a5fa;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;">
-      <span style="font-size:18px;">🏠</span>Inicio
+      <span style="font-size:16px;">🏠</span>Inicio
     </button>
     <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
-      <span style="font-size:18px;">🗺️</span>Mapa
+      <span style="font-size:16px;">🗺️</span>Mapa
     </button>
     <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;">
-      <span style="font-size:18px;">🔍</span>Buscar
+      <span style="font-size:16px;">🔍</span>Buscar
+    </button>
+    <button id="bdiario" style="padding:9px;background:#0d1626;border:1px solid ${S.errores.length>0?"rgba(239,68,68,.25)":"rgba(148,163,184,.1)"};border-radius:10px;color:${S.errores.length>0?"#f87171":"#94a3b8"};font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;">
+      <span style="font-size:16px;">📒</span>Errores
+      ${S.errores.length>0?`<span style="position:absolute;top:-3px;right:-3px;background:#ef4444;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;">${Math.min(S.errores.length,99)}</span>`:""}
     </button>
   </div>
 </div>
@@ -563,7 +627,10 @@ function rSes(){
   return`<div>
 <div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:11px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
   <div style="flex:1;">
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;margin-bottom:4px;"><span>Pregunta ${ses.idx+1}/${tot}</span><span style="color:#fbbf24;font-weight:700;">${ses.res.filter(r=>r.ok).length} correctas</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;margin-bottom:4px;">
+      <span>Pregunta ${ses.idx+1}/${tot} ${ses.modo==="simulacro"?'<span style="background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:1px 7px;color:#a78bfa;font-size:10px;margin-left:5px;">⏱ Simulacro</span>':ses.modo==="repaso"?'<span style="background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.25);border-radius:10px;padding:1px 7px;color:#fbbf24;font-size:10px;margin-left:5px;">🔄 Repaso</span>':''}</span>
+      <span style="color:#fbbf24;font-weight:700;">${ses.res.filter(r=>r.ok).length} correctas</span>
+    </div>
     <div style="height:4px;background:#131f35;border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.round((ses.idx/tot)*100)}%;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width .5s;"></div></div>
   </div>
   <button id="babortar" style="background:rgba(239,68,68,.12);border:1.5px solid rgba(239,68,68,.35);border-radius:8px;color:#f87171;font-size:12px;font-weight:700;padding:5px 11px;flex-shrink:0;">✕ Salir</button>
@@ -674,6 +741,12 @@ function rOkF(q){const xp=q.tipo==="open"?50:q.tipo==="mc"?40:35;return`<div cla
   <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;margin-bottom:7px;">Concepto de Curtis</div>
   <p style="font-size:14px;color:#cbd5e1;line-height:1.7;margin:0;">${q.expl}</p>
 </div>
+${(S.ses.conexiones||[]).length?`<div style="background:#0d1626;border:1px solid rgba(148,163,184,.08);border-radius:11px;padding:12px 14px;margin-bottom:12px;">
+  <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">🔗 Conceptos conectados en Curtis</div>
+  <div style="display:flex;flex-wrap:wrap;gap:7px;">
+    ${(S.ses.conexiones||[]).map(con=>`<button data-busq="${con}" style="padding:5px 12px;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.2);border-radius:20px;color:#60a5fa;font-size:12px;">${con}</button>`).join("")}
+  </div>
+</div>`:""}
 <button id="bnxt" style="width:100%;padding:13px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;">Siguiente →</button>
 </div>`;}
 
@@ -841,12 +914,100 @@ function rBuscar(){
 </div>
 </div>`;}
 
+// ── DIARIO DE ERRORES ────────────────────────────────────────
+function rDiario(){
+  const errs=S.errores.slice().reverse(); // más recientes primero
+  return`<div>
+<div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5;">
+  <button id="bbk" style="background:none;border:none;color:#64748b;font-size:20px;padding:4px;line-height:1;">←</button>
+  <div style="flex:1;"><div style="font-size:14px;font-weight:700;color:#f1f5f9;">Diario de errores</div><div style="font-size:11px;color:#475569;">${errs.length} conceptos para reforzar</div></div>
+</div>
+<div style="max-width:640px;margin:0 auto;padding:16px 16px 80px;">
+  ${errs.length===0?`<div style="text-align:center;padding:40px 0;">
+    <div style="font-size:40px;margin-bottom:12px;">🎉</div>
+    <div style="font-size:15px;color:#64748b;">Sin errores registrados todavía.<br>¡Empezá a practicar!</div>
+  </div>`:""}
+  ${errs.map((e,i)=>`<div style="background:#0d1626;border:1px solid ${e.meta==="no"?"rgba(239,68,68,.2)":"rgba(148,163,184,.08)"};border-radius:12px;padding:14px;margin-bottom:9px;" class="fu">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;">
+      <div style="font-size:18px;">${e.meta==="no"?"😕":"❌"}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e.tema}</div>
+        <div style="font-size:10px;color:#475569;">Curtis cap. ${e.cap||"—"} · ${e.fecha}</div>
+      </div>
+    </div>
+    ${e.pregunta?`<div style="font-size:12px;color:#64748b;margin-bottom:7px;line-height:1.5;font-style:italic;">"${e.pregunta}..."</div>`:""}
+    <div style="background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.12);border-radius:8px;padding:10px 12px;">
+      <div style="font-size:10px;color:#60a5fa;margin-bottom:5px;text-transform:uppercase;">Respuesta correcta</div>
+      <div style="font-size:13px;color:#cbd5e1;line-height:1.6;">${e.respCorrecta?.substring(0,200)||""}</div>
+    </div>
+  </div>`).join("")}
+</div>
+<!-- NAV INFERIOR -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#0a1020;border-top:1px solid rgba(148,163,184,.1);padding:8px 16px 12px;z-index:10;">
+  <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+    <button id="bnav-home" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🏠</span>Inicio</button>
+    <button id="bnav-mapa" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🗺️</span>Mapa</button>
+    <button id="bnav-buscar" style="padding:9px;background:#0d1626;border:1px solid rgba(148,163,184,.1);border-radius:10px;color:#94a3b8;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:18px;">🔍</span>Buscar</button>
+  </div>
+</div>
+</div>`;}
+
+// ── EXPLICAME SIMPLE (overlay flotante) ───────────────────────
+let explicameActivo=false;
+let explicameLoad=false;
+let explicameTxt="";
+let explicameRes="";
+
+function rExplicameBtn(){
+  return`<button id="bexplicame" style="position:fixed;bottom:80px;right:16px;width:52px;height:52px;background:linear-gradient(135deg,#7c3aed,#2563eb);border:none;border-radius:50%;color:#fff;font-size:22px;z-index:20;box-shadow:0 4px 16px rgba(124,58,237,.4);" title="Explicame simple">💡</button>
+${explicameActivo?`<div id="explicame-panel" style="position:fixed;bottom:144px;right:12px;width:min(340px,calc(100vw-24px));background:#0d1626;border:1px solid rgba(124,58,237,.3);border-radius:16px;padding:16px;z-index:20;box-shadow:0 8px 32px rgba(0,0,0,.4);">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+    <span style="font-size:18px;">💡</span>
+    <span style="font-size:14px;font-weight:700;color:#f1f5f9;flex:1;">Explicame simple</span>
+    <button id="bexplicame-cerrar" style="background:none;border:none;color:#64748b;font-size:18px;line-height:1;">✕</button>
+  </div>
+  <input id="iexplicame" type="text" placeholder="¿Qué término querés entender?" value="${explicameTxt}"
+    style="width:100%;padding:10px 12px;background:#131f35;border:1px solid rgba(148,163,184,.15);border-radius:9px;color:#f1f5f9;font-size:14px;outline:none;margin-bottom:10px;">
+  <button id="bexplicame-buscar" style="width:100%;padding:10px;background:linear-gradient(135deg,#7c3aed,#2563eb);border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;">
+    ${explicameLoad?`<span style="width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block;"></span>`:""}
+    ${explicameLoad?"Pensando...":"Explicame como si tuviera 15 años"}
+  </button>
+  ${explicameRes?`<div style="margin-top:12px;padding:12px;background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.15);border-radius:10px;font-size:13px;color:#cbd5e1;line-height:1.7;">${explicameRes}</div>`:""}
+</div>`:""}`;
+}
+
+async function explicarSimple(){
+  if(!explicameTxt.trim())return;
+  explicameLoad=true;render();
+  try{
+    const txt=await ai(`Explicá "${explicameTxt}" en biología como si fuera para un alumno de 15 años de secundaria argentina. Usá una analogía con algo cotidiano. Máximo 4 oraciones. Sin tecnicismos innecesarios. Español rioplatense informal.`);
+    explicameRes=txt;
+  }catch(e){
+    explicameRes="No pude generar la explicación. Revisá tu conexión.";
+  }
+  explicameLoad=false;render();
+}
+
+// ── CONEXIONES ENTRE CONCEPTOS ───────────────────────────────
+async function mostrarConexiones(q){
+  // Llamada async — resultado se muestra en la pantalla ok/rev
+  try{
+    const txt=await ai(`Dado el concepto "${q.tmNom}" de Curtis Biología cap. ${q.tmCap}, listá exactamente 3 conceptos del mismo libro que están directamente relacionados. Solo los nombres, separados por coma, sin explicación. Ej: "Fotosíntesis, Cloroplasto, ATP"`);
+    S.ses.conexiones=txt.split(",").map(s=>s.trim()).filter(Boolean).slice(0,3);
+  }catch(e){
+    S.ses.conexiones=[];
+  }
+  render();
+}
+
 function rFin(){
   const r=S.ses.res,ok=r.filter(x=>x.ok).length,pct=r.length?Math.round(ok/r.length*100):0;
-  const xp=r.reduce((s,x)=>s+(x.xp||0),0),c=pct>=80?"#22c55e":pct>=50?"#fbbf24":"#ef4444";
+  const xp=r.reduce((s,x)=>s+(x.xp||0),0),col=pct>=80?"#22c55e":pct>=50?"#fbbf24":"#ef4444";
+  const esSimulacro=S.ses.modo==="simulacro";
+  const c=col;
   return`<div>
 <div style="background:#0a1020;border-bottom:1px solid rgba(148,163,184,.08);padding:12px 18px;position:sticky;top:0;z-index:5;">
-  <div style="font-size:14px;font-weight:700;color:#f1f5f9;">Resumen de sesión</div>
+  <div style="font-size:14px;font-weight:700;color:#f1f5f9;">${esSimulacro?"Resultado del Simulacro OAB":"Resumen de sesión"}</div>
 </div>
 <div style="max-width:640px;margin:0 auto;padding:20px 16px 40px;" class="fu">
   <div style="text-align:center;margin-bottom:22px;">
@@ -901,7 +1062,15 @@ function ev(){
     }
   });
   document.getElementById("bsel")?.addEventListener("click",()=>{S.pan="sel";render();});
-  document.getElementById("bstart")?.addEventListener("click",()=>{S.showCfg=true;S.pan="sel";render();});
+  document.getElementById("bstart-normal")?.addEventListener("click",()=>{S.showCfg=true;S.pan="sel";render();});
+  document.getElementById("bstart-repaso")?.addEventListener("click",()=>{
+    if(temasParaRepasar().length>0)iniciar("repaso");
+    else alert("No tenés temas para repasar hoy.");
+  });
+  document.getElementById("bstart-simulacro")?.addEventListener("click",()=>{
+    if(confirm("Simulacro OAB: 20 preguntas, sin pistas, sin socrático. ¿Listo?"))iniciar("simulacro");
+  });
+  document.getElementById("bdiario")?.addEventListener("click",()=>{S.pan="diario";render();});
   document.getElementById("bbk")?.addEventListener("click",()=>{
     if(S.pan==="mapa"&&S.mapaUnit){S.mapaUnit=null;render();}
     else if(S.pan==="mapa"||S.pan==="buscar"){S.pan="home";render();}
@@ -942,10 +1111,29 @@ function ev(){
   });
   document.getElementById("bvosel")?.addEventListener("click",()=>{S.pan="sel";render();});
   document.getElementById("bnueva")?.addEventListener("click",iniciar);
-  // Nav inferior (aparece en home, mapa y buscar)
+  // Nav inferior
   document.getElementById("bnav-home")?.addEventListener("click",()=>{S.pan="home";render();});
   document.getElementById("bnav-mapa")?.addEventListener("click",()=>{S.mapaUnit=null;S.pan="mapa";render();});
   document.getElementById("bnav-buscar")?.addEventListener("click",()=>{S.pan="buscar";render();setTimeout(()=>document.getElementById("ibusq")?.focus(),80);});
+  document.getElementById("bdiario")?.addEventListener("click",()=>{S.pan="diario";render();});
+  // Explicame simple
+  document.getElementById("bexplicame")?.addEventListener("click",()=>{
+    explicameActivo=!explicameActivo;if(!explicameActivo)explicameRes="";render();
+    setTimeout(()=>document.getElementById("iexplicame")?.focus(),80);
+  });
+  document.getElementById("bexplicame-cerrar")?.addEventListener("click",()=>{explicameActivo=false;explicameRes="";render();});
+  const iexp=document.getElementById("iexplicame");
+  if(iexp){
+    iexp.addEventListener("input",e=>{explicameTxt=e.target.value;});
+    iexp.addEventListener("keydown",e=>{if(e.key==="Enter")explicarSimple();});
+    iexp.focus();
+  }
+  document.getElementById("bexplicame-buscar")?.addEventListener("click",explicarSimple);
+  // Conexiones — ir al buscador
+  document.querySelectorAll("[data-busq]").forEach(el=>el.addEventListener("click",()=>{
+    S.busqTxt=el.dataset.busq;S.busqRes=null;S.pan="buscar";render();
+    setTimeout(()=>buscar(),100);
+  }));
   // Mapa general — clic en unidad
   document.querySelectorAll("[data-munit]").forEach(el=>el.addEventListener("click",()=>{S.mapaUnit=el.dataset.munit;render();}));
   // Mapa detalle — toggle tema
@@ -992,15 +1180,37 @@ function tryLogin(){
   S.pan="home";saveLocal();render();
 }
 
-async function iniciar(){
+async function iniciar(modo="normal"){
   S.showCfg=false;
-  const temas=[...S.sel].map(id=>tById(id)).filter(Boolean);
+  const modo_actual=modo||"normal";
+  S.ses.modo=modo_actual;
+
+  let temasIds;
+  if(modo_actual==="repaso"){
+    // Solo temas pendientes de repasar hoy
+    temasIds=temasParaRepasar();
+    if(!temasIds.length){alert("No tenés temas para repasar hoy. ¡Volvé mañana!");return;}
+  } else if(modo_actual==="simulacro"){
+    // Todos los temas seleccionados
+    temasIds=[...S.sel];
+    if(!temasIds.length){alert("Seleccioná temas primero.");return;}
+  } else {
+    // Normal: mezcla de temas débiles + seleccionados
+    const debiles=temasMasDebiles(3).filter(t=>S.sel.has(t));
+    const selArr=[...S.sel];
+    // 40% temas débiles si los hay, 60% normal
+    temasIds=debiles.length?[...debiles,...selArr].slice(0,selArr.length):selArr;
+    if(!temasIds.length)return;
+  }
+
+  const temas=temasIds.map(id=>tById(id)).filter(Boolean);
   if(!temas.length)return;
-  const tipos=S.cfg.tipos.length?S.cfg.tipos:["mc"];
+  const tipos=modo_actual==="simulacro"?["mc"]:S.cfg.tipos.length?S.cfg.tipos:["mc"];
+  const nPregs=modo_actual==="simulacro"?20:S.cfg.n;
   const plan=[];
-  for(let i=0;i<S.cfg.n;i++)plan.push({tema:temas[i%temas.length],tipo:tipos[i%tipos.length]});
+  for(let i=0;i<nPregs;i++)plan.push({tema:temas[i%temas.length],tipo:tipos[i%tipos.length]});
   for(let i=plan.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[plan[i],plan[j]]=[plan[j],plan[i]];}
-  S.ses={plan,pregs:Array(S.cfg.n).fill(null),idx:0,act:{fase:"cargando",ronda:0,hist:[],load:false,sel:null,txt:"",vfs:null},res:[]};
+  S.ses={plan,pregs:Array(nPregs).fill(null),idx:0,act:{fase:"cargando",ronda:0,hist:[],load:false,sel:null,txt:"",vfs:null},res:[],modo:modo_actual};
   S.pan="ses";render();
   const q=await genQ(plan[0].tema,plan[0].tipo);
   S.ses.pregs[0]=q;S.ses.act.fase="res";render();
@@ -1009,8 +1219,10 @@ async function iniciar(){
 
 async function enviar(){
   const ac=S.ses.act,q=S.ses.pregs[S.ses.idx];if(!q)return;
+  const esSimulacro=S.ses.modo==="simulacro";
   if(q.tipo==="mc"){
-    if(evalMC(q,ac.sel)){fin(q,true,40);return;}
+    if(evalMC(q,ac.sel)){fin(q,true,esSimulacro?30:40);return;}
+    if(esSimulacro){fin(q,false,0);return;} // simulacro: sin socrático
     ac.ronda++;ac.hist.push({r:"a",t:`Elegí: "${(q.ops[ac.sel]||"").replace(/^[A-D]\)\s*/,"").substring(0,60)}"`});
     ac.fase="dlg";ac.load=true;render();
     const rs=await socr(q,ac.hist,ac.ronda);
@@ -1053,14 +1265,27 @@ async function respDlg(){
 }
 
 function fin(q,ok,xp,meta){
-  // meta: "completo"|"parcial"|"no" — viene de la pantalla de metacognición
   const xpFinal=ok?xp:8;
-  S.ses.res.push({
-    ok,xp:xpFinal,tema:q.tmNom,tipo:q.tipo,
-    meta:meta||"",rondas:S.ses.act.ronda
-  });
+  S.ses.res.push({ok,xp:xpFinal,tema:q.tmNom,tipo:q.tipo,
+    meta:meta||"",rondas:S.ses.act.ronda,tid:q.tid||""});
   S.ses.act.fase=ok?"ok":"rev";
-  S.xp+=xpFinal;saveLocal();render();
+  S.xp+=xpFinal;
+  S.ses.conexiones=[];
+  // Actualizar SM-2
+  if(q.tid) sm2Update(q.tid, ok, meta||"");
+  // Cargar conexiones en background si fue correcto
+  if(ok&&S.ses.modo!=="simulacro") mostrarConexiones(q);
+  // Guardar error en diario si no fue correcto o metacognición negativa
+  if(!ok||(ok&&meta==="no")){
+    S.errores.push({
+      fecha:new Date().toISOString().split("T")[0],
+      tema:q.tmNom, cap:q.tmCap||"",
+      pregunta:q.enunc?.substring(0,120)||"",
+      respCorrecta:q.tipo==="mc"?(q.ops?.[q.ok]||"").replace(/^[A-D]\)\s*/,""):q.resp||q.expl||"",
+      meta:meta||""
+    });
+  }
+  saveLocal();render();
 }
 
 async function siguiente(){
@@ -1073,7 +1298,7 @@ async function siguiente(){
   }
   S.ses.idx=ni;S.ses.act={fase:"cargando",ronda:0,hist:[],load:false,sel:null,txt:"",vfs:null};render();
   if(!S.ses.pregs[ni]){const p=S.ses.plan[ni];S.ses.pregs[ni]=await genQ(p.tema,p.tipo);}
-  S.ses.act.fase="res";render();
+  S.ses.act.fase="res";S.ses.conexiones=[];render();
   if(ni+1<S.ses.plan.length&&!S.ses.pregs[ni+1])genQ(S.ses.plan[ni+1].tema,S.ses.plan[ni+1].tipo).then(q=>{S.ses.pregs[ni+1]=q;});
 }
 
